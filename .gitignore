@@ -1,0 +1,9 @@
+node_modules/
+.wrangler/
+.dev.vars
+# copied in by `npm run build`
+public/scram/
+public/baremux/
+public/libcurl/
+public/lucide/
+.claude/

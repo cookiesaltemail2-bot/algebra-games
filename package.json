@@ -1,0 +1,29 @@
+{
+  "name": "algebra-games",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node scripts/vendor.mjs",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cookiesaltemail2-bot/algebra-games.git"
+  },
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/cookiesaltemail2-bot/algebra-games/issues"
+  },
+  "homepage": "https://github.com/cookiesaltemail2-bot/algebra-games#readme",
+  "dependencies": {
+    "@mercuryworkshop/bare-mux": "^2.1.9",
+    "@mercuryworkshop/libcurl-transport": "^1.5.2",
+    "@mercuryworkshop/scramjet": "^1.1.0",
+    "lucide": "^0.400.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.165.0"
+  },
+  "private": true
+}
