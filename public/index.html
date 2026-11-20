@@ -88,11 +88,12 @@
       <button type="button" data-act="reload" aria-label="Reload"><i data-lucide="rotate-cw"></i></button>
       <label for="bar-url" class="sr-only">Address</label>
       <input id="bar-url" type="text" autocomplete="off" spellcheck="false">
-      <button type="button" data-act="close" aria-label="Close browser"><i data-lucide="x"></i></button>
+      <button type="button" data-act="fullscreen" aria-label="Fullscreen" title="Fullscreen"><i data-lucide="maximize"></i></button>
+      <button type="button" data-act="popout" aria-label="Open in new tab" title="Open in new tab"><i data-lucide="external-link"></i></button>
+      <button type="button" data-act="close" aria-label="Close browser" title="Close"><i data-lucide="x"></i></button>
+      <span class="progress" aria-hidden="true"></span>
     </form>
-    <div class="frame-wrap" id="frame-wrap">
-      <div class="loading" id="loading">connecting…</div>
-    </div>
+    <div class="frame-wrap" id="frame-wrap"></div>
   </section>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

@@ -27,7 +27,7 @@ const SKEY = 'algebra.settings';
 let settings = { ...DEFAULT_SETTINGS, ...read(SKEY) };
 const osReduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const reduced = () => settings.reduceMotion || osReduce;
-const defaultWisp = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/wisp/`;
+const defaultRelay = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/wsproxy/`;
 
 // ---------- animated wave background ----------
 const canvas = document.getElementById('bg');
@@ -171,9 +171,23 @@ const connection = new BareMux.BareMuxConnection('/baremux/worker.js');
 
 const browser = document.getElementById('browser');
 const frameWrap = document.getElementById('frame-wrap');
-const loading = document.getElementById('loading');
 const barUrl = document.getElementById('bar-url');
-let sjFrame, transportFor;
+let sjFrame, transportKey;
+
+// Built-in relay: one WebSocket per connection (wsproxy), which dodges Cloudflare's
+// 50-connections-per-invocation cap. A custom server is assumed to speak Wisp.
+const relayOptions = () => settings.wisp
+  ? { websocket: settings.wisp }
+  : { websocket: defaultRelay(), transport: 'wsproxy' };
+
+async function ensureTransport() {
+  const opts = relayOptions(), key = JSON.stringify(opts);
+  if (transportKey === key) return;
+  await connection.setTransport('/libcurl/index.mjs', [opts]);
+  transportKey = key;
+}
+
+const setLoading = on => browser.classList.toggle('loading', on);
 
 function go(url) {
   if (settings.proxy) browse(url);
@@ -184,23 +198,24 @@ async function browse(url) {
   browser.hidden = false;
   document.body.classList.add('browsing');
   barUrl.value = url;
-  loading.hidden = false;
+  setLoading(true);
   try {
     if (!navigator.serviceWorker) throw new Error('service workers are blocked here (the site needs https)');
     await navigator.serviceWorker.register('/sw.js');
     await navigator.serviceWorker.ready;
-    const wisp = settings.wisp || defaultWisp();
-    if (transportFor !== wisp) {
-      await connection.setTransport('/libcurl/index.mjs', [{ websocket: wisp }]);
-      transportFor = wisp;
-    }
+    await ensureTransport();
     if (!sjFrame) {
       sjFrame = scramjet.createFrame();
-      sjFrame.frame.className = 'proxy-frame';
-      sjFrame.frame.title = 'Proxied page';
-      frameWrap.append(sjFrame.frame);
+      const f = sjFrame.frame;
+      f.className = 'proxy-frame';
+      f.title = 'Proxied page';
+      // lets videos autoplay and go fullscreen inside the frame
+      f.allow = 'fullscreen; autoplay; encrypted-media; picture-in-picture; clipboard-read; clipboard-write';
+      f.allowFullscreen = true;
+      frameWrap.append(f);
       sjFrame.addEventListener('urlchange', e => { barUrl.value = e.url; });
-      sjFrame.frame.addEventListener('load', () => { loading.hidden = true; });
+      sjFrame.addEventListener('navigate', () => setLoading(true));
+      f.addEventListener('load', () => setLoading(false));
     }
     sjFrame.go(url);
   } catch (err) {
@@ -213,20 +228,26 @@ function closeBrowser() {
   if (browser.hidden) return;
   browser.hidden = true;
   document.body.classList.remove('browsing');
+  setLoading(false);
+  if (document.fullscreenElement) document.exitFullscreen();
   if (sjFrame) sjFrame.frame.src = 'about:blank'; // stops audio/video from the closed page
   dirty = true;
 }
 
+const barActions = {
+  close: closeBrowser,
+  back: () => sjFrame?.back(),
+  forward: () => sjFrame?.forward(),
+  reload: () => { setLoading(true); sjFrame?.reload(); },
+  fullscreen: () => frameWrap.requestFullscreen?.(),
+  popout: () => { if (barUrl.value) window.open(scramjet.encodeUrl(barUrl.value), '_blank'); },
+};
 document.getElementById('bar').addEventListener('submit', e => {
   e.preventDefault();
   const q = barUrl.value.trim();
   if (q) browse(toUrl(q, settings.engine));
 });
-document.querySelectorAll('.bar [data-act]').forEach(b => b.addEventListener('click', () => {
-  const act = b.dataset.act;
-  if (act === 'close') closeBrowser();
-  else if (sjFrame) sjFrame[act]();
-}));
+document.querySelectorAll('.bar [data-act]').forEach(b => b.addEventListener('click', () => barActions[b.dataset.act]()));
 
 // ---------- bookmarks ----------
 const brand = (name, color) => ({ name, color, url: `https://${name}.com`, brand: name });
@@ -328,7 +349,7 @@ const SECTIONS = [
   ['browsing', 'globe', [
     { key: 'engine', type: 'select', label: 'Search engine', desc: 'Used when what you type is not a web address.', options: Object.entries(ENGINES).map(([k, [n]]) => [k, n]) },
     { key: 'proxy', type: 'toggle', label: 'Open sites through the proxy', desc: 'Searches and bookmarks load inside algebra with Scramjet. Turn off to go to sites directly.' },
-    { key: 'wisp', type: 'text', label: 'Wisp server', desc: 'Relays the proxy\'s traffic. Leave empty to use this site\'s own relay.', placeholder: () => defaultWisp() },
+    { key: 'wisp', type: 'text', label: 'Wisp server', desc: 'Leave empty to use this site\'s built-in relay. Sites hosted on Cloudflare (like Discord) only work through your own Wisp server.', placeholder: () => 'empty = built-in relay' },
   ]],
 ];
 
