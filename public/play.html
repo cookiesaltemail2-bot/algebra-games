@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>playing · algebra</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="play-page">
+  <header class="play-bar">
+    <a href="/#games" aria-label="Back to games" title="Back to games"><i data-lucide="arrow-left"></i></a>
+    <h1 id="title">game</h1>
+    <button type="button" id="full" aria-label="Fullscreen" title="Fullscreen"><i data-lucide="maximize"></i></button>
+    <a id="newtab" target="_blank" rel="noopener" aria-label="Open game in a new tab" title="Open in new tab"><i data-lucide="external-link"></i></a>
+  </header>
+  <iframe id="game" title="Game" allow="autoplay; fullscreen; gamepad; clipboard-write; encrypted-media" allowfullscreen></iframe>
+  <p class="play-bad" id="bad" hidden>That isn't a game this site can open. <a href="/#games">Back to games</a></p>
+
+  <script src="/lucide/lucide.min.js"></script>
+  <script>
+    // only open games from the two catalogs, so ?g= can't be used to frame arbitrary pages
+    const ALLOWED = ['html5.gamemonetize.co', 'html5.gamedistribution.com'];
+    const params = new URLSearchParams(location.search);
+    const game = document.getElementById('game');
+    let url;
+    try { url = new URL(params.get('g')); } catch {}
+    if (url && url.protocol === 'https:' && ALLOWED.includes(url.hostname)) {
+      const name = params.get('t') || 'game';
+      document.getElementById('title').textContent = name;
+      document.title = `${name} · algebra`;
+      document.getElementById('newtab').href = url.href;
+      game.src = url.href;
+    } else {
+      game.remove();
+      document.getElementById('bad').hidden = false;
+    }
+    document.getElementById('full').addEventListener('click', () => game.requestFullscreen?.());
+    try {
+      const s = JSON.parse(localStorage.getItem('algebra.settings'));
+      if (s && s.accent) document.documentElement.style.setProperty('--accent', s.accent);
+    } catch {}
+    lucide.createIcons();
+  </script>
+</body>
+</html>

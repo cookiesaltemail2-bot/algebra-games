@@ -468,14 +468,113 @@ function apply() {
   dirty = true;
 }
 
+// ---------- games ----------
+const SOURCES = { gm: 'GameMonetize', gd: 'GameDistribution' };
+const GAME_PAGE = 96; // cards added per scroll step; 6000 at once would freeze the page
+const gameGrid = document.getElementById('game-grid');
+const gameQ = document.getElementById('game-q');
+const gameStatus = document.getElementById('game-status');
+const gameMore = document.getElementById('game-more');
+let allGames = null, gamesLoading = false, gameSource = 'all', gameCat = 'all', shownGames = [], renderedGames = 0;
+
+async function loadGames() {
+  if (allGames || gamesLoading) return;
+  gamesLoading = true;
+  try {
+    const r = await fetch('/games.json');
+    if (!r.ok) throw new Error(r.status);
+    allGames = await r.json();
+    renderChips();
+    filterGames();
+  } catch {
+    gameStatus.textContent = 'Couldn\'t load the games list. Reload the page to try again.';
+  }
+  gamesLoading = false;
+}
+
+function chip(label, count, active, onClick) {
+  const b = el('button', 'chip', label);
+  b.type = 'button';
+  b.setAttribute('aria-pressed', active);
+  if (count != null) b.append(el('span', 'chip-count', count.toLocaleString()));
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function renderChips() {
+  document.getElementById('game-sources').replaceChildren(
+    chip('All', allGames.length, gameSource === 'all', () => setGameFilter('all', gameCat)),
+    ...Object.entries(SOURCES).map(([key, name]) =>
+      chip(name, allGames.filter(g => g.s === key).length, gameSource === key, () => setGameFilter(key, gameCat))));
+  const counts = {};
+  for (const g of allGames) if (gameSource === 'all' || g.s === gameSource) counts[g.c] = (counts[g.c] || 0) + 1;
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 16);
+  document.getElementById('game-cats').replaceChildren(
+    chip('All categories', null, gameCat === 'all', () => setGameFilter(gameSource, 'all')),
+    ...top.map(([c, n]) => chip(c, n, gameCat === c, () => setGameFilter(gameSource, c))));
+}
+
+function setGameFilter(source, category) {
+  gameSource = source;
+  gameCat = category;
+  renderChips();
+  filterGames();
+}
+
+function filterGames() {
+  const q = gameQ.value.trim().toLowerCase();
+  shownGames = allGames.filter(g =>
+    (gameSource === 'all' || g.s === gameSource) && (gameCat === 'all' || g.c === gameCat) && (!q || g.n.toLowerCase().includes(q)));
+  gameQ.placeholder = `search ${allGames.length.toLocaleString()} games`;
+  gameStatus.textContent = 'No games match that.';
+  gameStatus.hidden = shownGames.length > 0;
+  gameGrid.replaceChildren();
+  renderedGames = 0;
+  fillGames();
+}
+
+const playUrl = g => `/play?g=${encodeURIComponent(g.u)}&t=${encodeURIComponent(g.n)}`;
+
+// keep adding cards until the grid reaches past the bottom of the screen
+function fillGames() {
+  while (renderedGames < shownGames.length && gameMore.getBoundingClientRect().top < innerHeight + 800) {
+    const frag = document.createDocumentFragment();
+    for (const g of shownGames.slice(renderedGames, renderedGames + GAME_PAGE)) {
+      const a = el('a', 'game');
+      a.href = playUrl(g);
+      const img = el('img');
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      if (g.i) img.src = g.i;
+      a.append(img, el('span', 'game-name', g.n), el('span', 'game-src', `${SOURCES[g.s]} · ${g.c}`));
+      frag.append(a);
+    }
+    renderedGames += GAME_PAGE;
+    gameGrid.append(frag);
+  }
+}
+addEventListener('scroll', fillGames, { passive: true });
+
+let gameSearchTimer;
+gameQ.addEventListener('input', () => {
+  clearTimeout(gameSearchTimer);
+  gameSearchTimer = setTimeout(() => allGames && filterGames(), 150);
+});
+document.getElementById('game-random').addEventListener('click', () => {
+  const pool = shownGames.length ? shownGames : allGames;
+  if (pool?.length) location.href = playUrl(pool[Math.floor(Math.random() * pool.length)]);
+});
+
 // ---------- routing ----------
-const views = { home: hero, settings: document.getElementById('settings') };
+const views = { home: hero, games: document.getElementById('games'), settings: document.getElementById('settings') };
 function route() {
-  const view = location.hash === '#settings' ? 'settings' : 'home';
+  const view = { '#settings': 'settings', '#games': 'games' }[location.hash] || 'home';
   for (const [name, v] of Object.entries(views)) v.hidden = name !== view;
   document.querySelectorAll('.sidebar a').forEach(a =>
-    a.classList.toggle('active', a.getAttribute('href') === (view === 'settings' ? '#settings' : '#')));
+    a.classList.toggle('active', a.getAttribute('href') === (view === 'home' ? '#' : `#${view}`)));
   closeBrowser();
+  if (view === 'games') { loadGames(); fillGames(); }
 }
 addEventListener('hashchange', route);
 document.querySelector('.sidebar').addEventListener('click', closeBrowser);

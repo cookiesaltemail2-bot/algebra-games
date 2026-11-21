@@ -52,6 +52,25 @@
       <div class="grid" id="grid"></div>
     </section>
 
+    <section class="view games" id="games" hidden>
+      <header class="games-head">
+        <h1>games</h1>
+        <div class="games-tools">
+          <label class="search games-search">
+            <i data-lucide="search"></i>
+            <span class="sr-only">Search games</span>
+            <input id="game-q" type="search" placeholder="search games" autocomplete="off">
+          </label>
+          <button type="button" class="pill-btn" id="game-random"><i data-lucide="shuffle"></i>random</button>
+        </div>
+      </header>
+      <div class="chips" id="game-sources" role="group" aria-label="Game source"></div>
+      <div class="chips" id="game-cats" role="group" aria-label="Category"></div>
+      <p class="games-status" id="game-status">loading games…</p>
+      <div class="game-grid" id="game-grid"></div>
+      <div id="game-more" aria-hidden="true"></div>
+    </section>
+
     <section class="view settings" id="settings" hidden>
       <header class="settings-head">
         <h1>Settings</h1>
@@ -72,7 +91,7 @@
           </section>
           <details class="card credits">
             <summary>Credits</summary>
-            <p><a href="https://github.com/MercuryWorkshop/scramjet" target="_blank" rel="noopener">Scramjet</a>, <a href="https://github.com/MercuryWorkshop/bare-mux" target="_blank" rel="noopener">bare-mux</a> and <a href="https://github.com/MercuryWorkshop/CurlTransport" target="_blank" rel="noopener">libcurl-transport</a> by Mercury Workshop power the proxy. Icons from <a href="https://lucide.dev" target="_blank" rel="noopener">Lucide</a> and <a href="https://simpleicons.org" target="_blank" rel="noopener">Simple Icons</a>.</p>
+            <p><a href="https://github.com/MercuryWorkshop/scramjet" target="_blank" rel="noopener">Scramjet</a>, <a href="https://github.com/MercuryWorkshop/bare-mux" target="_blank" rel="noopener">bare-mux</a> and <a href="https://github.com/MercuryWorkshop/CurlTransport" target="_blank" rel="noopener">libcurl-transport</a> by Mercury Workshop power the proxy. Games come from the <a href="https://gamemonetize.com" target="_blank" rel="noopener">GameMonetize</a> and <a href="https://gamedistribution.com" target="_blank" rel="noopener">GameDistribution</a> catalogs, which license them for embedding. Icons from <a href="https://lucide.dev" target="_blank" rel="noopener">Lucide</a> and <a href="https://simpleicons.org" target="_blank" rel="noopener">Simple Icons</a>.</p>
             <p>This site's source, including the relay, is on <a href="https://github.com/cookiesaltemail2-bot/algebra-games" target="_blank" rel="noopener">GitHub</a> under the AGPL-3.0.</p>
           </details>
           <p class="foot">algebra · v1</p>

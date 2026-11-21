@@ -1,3 +1,9 @@
 /*
   Cross-Origin-Opener-Policy: same-origin
-  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Embedder-Policy: credentialless
+
+# games are framed from other sites, which embedder policies would block
+/play
+  ! Cross-Origin-Embedder-Policy
+/play.html
+  ! Cross-Origin-Embedder-Policy
