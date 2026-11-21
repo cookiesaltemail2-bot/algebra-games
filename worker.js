@@ -11,7 +11,9 @@ export const ALLOWED_PORTS = new Set([80, 443, 8080, 8443]);
 
 export default {
   async fetch(request, env) {
-    const m = new URL(request.url).pathname.match(/^\/wsproxy\/([a-z0-9.-]+):(\d{1,5})$/i);
+    const { pathname } = new URL(request.url);
+    if (pathname === '/api/chat') return chat(request, env);
+    const m = pathname.match(/^\/wsproxy\/([a-z0-9.-]+):(\d{1,5})$/i);
     if (m && request.headers.get('Upgrade') === 'websocket') {
       const port = Number(m[2]);
       if (!ALLOWED_PORTS.has(port)) return new Response('port not allowed', { status: 403 });
@@ -20,6 +22,45 @@ export default {
     return env.ASSETS.fetch(request);
   },
 };
+
+// ---------- AI chat (Cloudflare Workers AI, free daily allowance) ----------
+// Free-plan models only; keep in sync with AI_MODELS in public/app.js.
+export const AI_MODELS = [
+  '@cf/google/gemma-4-26b-a4b-it',
+  '@cf/mistralai/mistral-small-3.1-24b-instruct',
+  '@cf/meta/llama-3.1-8b-instruct-fp8-fast',
+];
+const MAX_HISTORY = 20;   // messages sent per request; older ones are dropped to save the daily allowance
+const MAX_CHARS = 8000;   // per message
+const SYSTEM = 'You are algebra ai, a friendly assistant on a games website. Many users are teens, so keep everything appropriate for them. Be clear and concise. You may use simple markdown: **bold**, lists, `code` and fenced code blocks.';
+
+const json = (body, status) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+async function chat(request, env) {
+  if (request.method !== 'POST') return json({ error: 'POST only' }, 405);
+  // Stops other websites from spending this site's allowance from their pages (not a defence against scripts).
+  const origin = request.headers.get('Origin');
+  if (origin && origin !== new URL(request.url).origin) return json({ error: 'forbidden' }, 403);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad request' }, 400); }
+  const model = AI_MODELS.includes(body?.model) ? body.model : AI_MODELS[0];
+  const messages = (Array.isArray(body?.messages) ? body.messages : [])
+    .filter(m => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+    .slice(-MAX_HISTORY)
+    .map(m => ({ role: m.role, content: m.content.slice(0, MAX_CHARS) }));
+  if (messages.at(-1)?.role !== 'user') return json({ error: 'Send a message first.' }, 400);
+
+  try {
+    const stream = await env.AI.run(model, { messages: [{ role: 'system', content: SYSTEM }, ...messages], stream: true, max_tokens: 1500 });
+    return new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' } });
+  } catch (e) {
+    const used = /4006|allocation|neurons/i.test(String(e?.message || e));
+    return used
+      ? json({ error: 'The AI\'s free daily allowance is used up. It resets at midnight UTC.' }, 429)
+      : json({ error: 'The AI had a problem answering. Try again in a moment.' }, 502);
+  }
+}
 
 function tunnel(hostname, port) {
   const [client, ws] = Object.values(new WebSocketPair());

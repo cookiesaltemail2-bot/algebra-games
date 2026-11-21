@@ -114,13 +114,15 @@ function frame() {
 }
 
 // ---------- clock + greeting ----------
+const dayPart = (h = new Date().getHours()) =>
+  h < 5 ? 'up late' : h < 12 ? 'good morning' : h < 18 ? 'good afternoon' : 'good evening';
 const clock = document.getElementById('clock');
 const greet = document.getElementById('greet');
 function tick() {
   const now = new Date();
   const h = now.getHours();
   clock.textContent = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: !settings.clock24 });
-  const part = h < 5 ? 'up late' : h < 12 ? 'good morning' : h < 18 ? 'good afternoon' : 'good evening';
+  const part = dayPart(h);
   greet.textContent = `${part} · ${now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toLowerCase()}`;
 }
 setInterval(tick, 1000);
@@ -566,15 +568,229 @@ document.getElementById('game-random').addEventListener('click', () => {
   if (pool?.length) location.href = playUrl(pool[Math.floor(Math.random() * pool.length)]);
 });
 
+// ---------- ai chat ----------
+// keep in sync with AI_MODELS in worker.js, which rejects anything else
+const AI_MODELS = [
+  ['@cf/google/gemma-4-26b-a4b-it', 'gemma 4'],
+  ['@cf/mistralai/mistral-small-3.1-24b-instruct', 'mistral small'],
+  ['@cf/meta/llama-3.1-8b-instruct-fp8-fast', 'llama 3.1 fast'],
+];
+const IDEAS = [
+  ['lightbulb', 'explain it simply', 'Why is the sky blue?'],
+  ['graduation-cap', 'math help', 'Walk me through solving 2x + 5 = 17 step by step.'],
+  ['pencil', 'write something', 'Write a short poem about a cat who loves video games.'],
+  ['code', 'fix my code', 'Why does my JavaScript for loop run one time too many?'],
+];
+const CKEY = 'algebra.chats';
+const MAX_CHATS = 50;
+const aiInput = document.getElementById('ai-input');
+const aiMsgs = document.getElementById('ai-msgs');
+const aiScroll = document.getElementById('ai-scroll');
+const aiModel = document.getElementById('ai-model');
+const aiSend = document.getElementById('ai-send');
+let chats = read(CKEY) || [];
+let chat = null;     // the open conversation, or null for a new one
+let aiAbort = null;  // set while a reply is streaming
+
+const escapeHtml = s => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Tiny markdown: everything is escaped first, then only fixed tags are added, so model output can't inject HTML.
+function md(text) {
+  return text.split(/```[\w-]*\n?([\s\S]*?)(?:```|$)/g).map((part, i) => i % 2
+    ? `<pre><code>${escapeHtml(part.replace(/\n$/, ''))}</code></pre>`
+    : escapeHtml(part)
+      .replace(/^#{1,4} (.+)$/gm, '<strong class="md-h">$1</strong>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+      .replace(/^(\s*)[-*] /gm, '$1• ')).join('');
+}
+console.assert(md('<b>hi</b>') === '&lt;b&gt;hi&lt;/b&gt;', 'md escapes html');
+console.assert(md('**a** `b`') === '<strong>a</strong> <code>b</code>', 'md inline');
+console.assert(md('x\n```js\n<i>\n```') === 'x\n<pre><code>&lt;i&gt;</code></pre>', 'md code block');
+
+// Workers AI streams either {response} (older models) or OpenAI-style {choices[0].delta.content}
+function sseDelta(line) {
+  if (!line.startsWith('data:')) return '';
+  const data = line.slice(5).trim();
+  if (!data || data === '[DONE]') return '';
+  try {
+    const j = JSON.parse(data);
+    return j.response ?? j.choices?.[0]?.delta?.content ?? '';
+  } catch { return ''; }
+}
+console.assert(sseDelta('data: {"response":"hi"}') === 'hi', 'sse legacy');
+console.assert(sseDelta('data: {"choices":[{"delta":{"content":"yo"}}]}') === 'yo', 'sse openai');
+console.assert(sseDelta('data: [DONE]') === '', 'sse done');
+
+function saveChats() {
+  chats.sort((a, b) => b.updated - a.updated);
+  chats = chats.slice(0, MAX_CHATS);
+  write(CKEY, chats);
+}
+
+function renderChatList() {
+  const q = document.getElementById('ai-find').value.trim().toLowerCase();
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  const list = document.getElementById('ai-list');
+  list.replaceChildren();
+  for (const [label, items] of [
+    ['today', chats.filter(c => c.updated >= startOfToday)],
+    ['earlier', chats.filter(c => c.updated < startOfToday)],
+  ]) {
+    const shown = items.filter(c => !q || c.title.toLowerCase().includes(q));
+    if (!shown.length) continue;
+    list.append(el('p', 'ai-group', label));
+    for (const c of shown) {
+      const row = el('div', 'ai-item' + (c === chat ? ' active' : ''));
+      const open = el('button', 'ai-item-open', c.title);
+      open.type = 'button';
+      open.addEventListener('click', () => openChat(c));
+      const del = el('button', 'ai-item-del');
+      del.type = 'button';
+      del.setAttribute('aria-label', `Delete chat "${c.title}"`);
+      del.innerHTML = '<i data-lucide="trash-2"></i>';
+      del.addEventListener('click', () => {
+        if (!confirm(`Delete "${c.title}"?`)) return;
+        chats = chats.filter(x => x !== c);
+        saveChats();
+        if (chat === c) openChat(null); else renderChatList();
+      });
+      row.append(open, del);
+      list.append(row);
+    }
+  }
+  lucide.createIcons();
+}
+
+function renderMessages() {
+  document.getElementById('ai-empty').hidden = !!chat?.messages.length;
+  document.getElementById('ai-title').textContent = chat?.title || 'new chat';
+  document.getElementById('ai-greet').textContent = dayPart();
+  aiMsgs.replaceChildren(...(chat?.messages || []).map(m => {
+    const b = el('div', `ai-msg ${m.role}${m.error ? ' error' : ''}`);
+    if (m.role === 'assistant') b.innerHTML = m.content ? md(m.content) : '<span class="ai-dots"><i></i><i></i><i></i></span>';
+    else b.textContent = m.content;
+    return b;
+  }));
+}
+
+function openChat(c) {
+  if (aiAbort) aiAbort.abort();
+  chat = c;
+  if (c) aiModel.value = c.model;
+  if (matchMedia('(max-width: 640px)').matches) document.getElementById('ai').classList.remove('side-closed'); // close the phone overlay
+  renderMessages();
+  renderChatList();
+  aiScroll.scrollTop = aiScroll.scrollHeight;
+  aiInput.focus();
+}
+
+function setSending(on) {
+  aiSend.setAttribute('aria-label', on ? 'Stop' : 'Send');
+  aiSend.innerHTML = `<i data-lucide="${on ? 'square' : 'arrow-up'}"></i>`;
+  lucide.createIcons();
+}
+
+async function sendChat(text) {
+  text = text.trim();
+  if (!text || aiAbort) return;
+  if (!chat) {
+    chat = { id: Date.now().toString(36), title: text.slice(0, 48), model: aiModel.value, messages: [], updated: Date.now() };
+    chats.unshift(chat);
+  }
+  chat.model = aiModel.value;
+  chat.messages.push({ role: 'user', content: text });
+  const history = chat.messages.filter(m => !m.error);
+  const reply = { role: 'assistant', content: '' };
+  chat.messages.push(reply);
+  chat.updated = Date.now();
+  aiInput.value = '';
+  aiInput.style.height = '';
+  renderMessages();
+  renderChatList();
+  aiScroll.scrollTop = aiScroll.scrollHeight;
+
+  const current = chat;
+  aiAbort = new AbortController();
+  setSending(true);
+  try {
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: current.model, messages: history }),
+      signal: aiAbort.signal,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || `The AI didn't answer (error ${res.status}).`);
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      reply.content += lines.map(sseDelta).join('');
+      if (chat === current) {
+        const nearBottom = aiScroll.scrollHeight - aiScroll.scrollTop - aiScroll.clientHeight < 80;
+        renderMessages();
+        if (nearBottom) aiScroll.scrollTop = aiScroll.scrollHeight;
+      }
+    }
+    if (!reply.content) throw new Error('The AI sent an empty reply. Try again.');
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      reply.content = err.message;
+      reply.error = true;
+    } else if (!reply.content) {
+      current.messages.pop(); // stopped before any words arrived
+    }
+  }
+  aiAbort = null;
+  setSending(false);
+  current.updated = Date.now();
+  saveChats();
+  if (chat === current) renderMessages();
+  renderChatList();
+}
+
+aiModel.append(...AI_MODELS.map(([id, name]) => new Option(name, id)));
+document.getElementById('ai-ideas').append(...IDEAS.map(([icon, title, prompt]) => {
+  const b = el('button', 'ai-idea');
+  b.type = 'button';
+  b.innerHTML = `<i data-lucide="${icon}"></i>`;
+  const text = el('span');
+  text.append(el('strong', '', title), el('span', '', prompt));
+  b.append(text);
+  b.addEventListener('click', () => sendChat(prompt));
+  return b;
+}));
+document.getElementById('ai-form').addEventListener('submit', e => {
+  e.preventDefault();
+  if (aiAbort) aiAbort.abort();
+  else sendChat(aiInput.value);
+});
+aiInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(aiInput.value); }
+});
+aiInput.addEventListener('input', () => {
+  aiInput.style.height = '';
+  aiInput.style.height = `${Math.min(aiInput.scrollHeight, 200)}px`;
+});
+document.getElementById('ai-new').addEventListener('click', () => openChat(null));
+document.getElementById('ai-find').addEventListener('input', renderChatList);
+document.getElementById('ai-toggle').addEventListener('click', () => document.getElementById('ai').classList.toggle('side-closed'));
+
 // ---------- routing ----------
-const views = { home: hero, games: document.getElementById('games'), settings: document.getElementById('settings') };
+const views = { home: hero, games: document.getElementById('games'), ai: document.getElementById('ai'), settings: document.getElementById('settings') };
 function route() {
-  const view = { '#settings': 'settings', '#games': 'games' }[location.hash] || 'home';
+  const view = { '#settings': 'settings', '#games': 'games', '#ai': 'ai' }[location.hash] || 'home';
   for (const [name, v] of Object.entries(views)) v.hidden = name !== view;
+  document.body.dataset.view = view;
   document.querySelectorAll('.sidebar a').forEach(a =>
     a.classList.toggle('active', a.getAttribute('href') === (view === 'home' ? '#' : `#${view}`)));
   closeBrowser();
   if (view === 'games') { loadGames(); fillGames(); }
+  if (view === 'ai') { renderMessages(); renderChatList(); }
 }
 addEventListener('hashchange', route);
 document.querySelector('.sidebar').addEventListener('click', closeBrowser);

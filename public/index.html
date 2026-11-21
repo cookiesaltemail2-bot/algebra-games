@@ -71,6 +71,47 @@
       <div id="game-more" aria-hidden="true"></div>
     </section>
 
+    <section class="view ai" id="ai" hidden>
+      <aside class="ai-side" id="ai-side">
+        <div class="ai-brand"><svg aria-hidden="true"><use href="#logo"/></svg>algebra ai <span class="badge">free</span></div>
+        <button type="button" class="ai-new" id="ai-new"><i data-lucide="square-pen"></i>new chat</button>
+        <label class="ai-find">
+          <i data-lucide="search"></i>
+          <span class="sr-only">Search chats</span>
+          <input id="ai-find" type="search" placeholder="search chats" autocomplete="off">
+        </label>
+        <nav class="ai-list" id="ai-list" aria-label="Chats"></nav>
+        <div class="ai-quota">
+          <strong>free daily allowance</strong>
+          <span>Shared by everyone on this site. Resets every day at midnight UTC.</span>
+        </div>
+      </aside>
+      <div class="ai-main">
+        <header class="ai-top">
+          <button type="button" id="ai-toggle" aria-label="Show or hide chat list" title="Chat list"><i data-lucide="panel-left"></i></button>
+          <h2 id="ai-title">new chat</h2>
+        </header>
+        <div class="ai-scroll" id="ai-scroll">
+          <div class="ai-empty" id="ai-empty">
+            <svg class="ai-logo" aria-hidden="true"><use href="#logo"/></svg>
+            <h2 id="ai-greet">hello</h2>
+            <p>what are we getting into today?</p>
+            <div class="ai-ideas" id="ai-ideas"></div>
+          </div>
+          <div class="ai-msgs" id="ai-msgs" aria-live="polite"></div>
+        </div>
+        <form class="ai-box" id="ai-form">
+          <label for="ai-input" class="sr-only">Message</label>
+          <textarea id="ai-input" rows="1" placeholder="message algebra ai…"></textarea>
+          <div class="ai-box-row">
+            <select id="ai-model" class="select ai-model" aria-label="Model"></select>
+            <button type="submit" class="ai-send" id="ai-send" aria-label="Send"><i data-lucide="arrow-up"></i></button>
+          </div>
+        </form>
+        <p class="ai-note">ai can make mistakes, so double-check anything important.</p>
+      </div>
+    </section>
+
     <section class="view settings" id="settings" hidden>
       <header class="settings-head">
         <h1>Settings</h1>
