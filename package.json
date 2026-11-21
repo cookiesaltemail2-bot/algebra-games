@@ -2,7 +2,7 @@
   "name": "algebra-games",
   "version": "1.0.0",
   "scripts": {
-    "build": "node scripts/vendor.mjs && node scripts/games.mjs",
+    "build": "node scripts/vendor.mjs && node scripts/games.mjs && node scripts/charts.mjs",
     "dev": "npm run build && wrangler dev",
     "deploy": "wrangler deploy"
   },

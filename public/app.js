@@ -3,8 +3,9 @@ const read = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { 
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 // ---------- settings ----------
-const ACCENTS = ['#f4f4f5', '#f87171', '#fb923c', '#facc15', '#4ade80', '#2dd4bf', '#60a5fa', '#c084fc', '#f472b6'];
+const ACCENTS = ['#d4f55c', '#f4f4f5', '#f87171', '#fb923c', '#facc15', '#4ade80', '#2dd4bf', '#60a5fa', '#a78bfa', '#f472b6'];
 const FONTS = {
+  Sora: 'Sora:wght@200;400;500;600;700;800',
   Outfit: 'Outfit:wght@200;400;500;700;800',
   Lexend: 'Lexend:wght@200;400;500;700;800',
   Inter: 'Inter:wght@200;400;500;700;800',
@@ -19,15 +20,22 @@ const ENGINES = {
   brave: ['Brave', 'https://search.brave.com/search?q=%s'],
 };
 const DEFAULT_SETTINGS = {
-  accent: '#f4f4f5', matchAccent: false, interactive: true, density: 30, speed: 1, dim: 0, font: 'Outfit', reduceMotion: false,
+  v: 2, accent: '#d4f55c', matchAccent: false, interactive: true, density: 30, speed: 1, dim: 0, font: 'Sora', reduceMotion: false,
   showClock: true, clock24: false, hints: true, showBookmarks: true,
-  engine: 'duckduckgo', proxy: true, wisp: '',
+  engine: 'duckduckgo', proxy: true, relay: 'fly', wisp: '',
 };
 const SKEY = 'algebra.settings';
-let settings = { ...DEFAULT_SETTINGS, ...read(SKEY) };
+const stored = read(SKEY) || {};
+if (!stored.v) {
+  // saved before the redesign: the old defaults were stored too, so drop them to pick up the new look
+  if (stored.accent === '#f4f4f5') delete stored.accent;
+  if (stored.font === 'Outfit') delete stored.font;
+}
+let settings = { ...DEFAULT_SETTINGS, ...stored, v: DEFAULT_SETTINGS.v };
 const osReduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const reduced = () => settings.reduceMotion || osReduce;
-const defaultRelay = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/wsproxy/`;
+const FLY_WISP = 'wss://algebra-wisp.fly.dev/'; // wisp-server/ on Fly.io: reaches every site, Cloudflare-hosted ones too
+const cloudflareRelay = () => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/wsproxy/`;
 
 // ---------- animated wave background ----------
 const canvas = document.getElementById('bg');
@@ -178,9 +186,11 @@ let sjFrame, transportKey;
 
 // Built-in relay: one WebSocket per connection (wsproxy), which dodges Cloudflare's
 // 50-connections-per-invocation cap. A custom server is assumed to speak Wisp.
-const relayOptions = () => settings.wisp
-  ? { websocket: settings.wisp }
-  : { websocket: defaultRelay(), transport: 'wsproxy' };
+// A custom server wins; otherwise the Fly Wisp server, or the Cloudflare backup relay
+// (one WebSocket per connection, which dodges Cloudflare's 50-connections-per-invocation cap).
+const relayOptions = () => settings.wisp ? { websocket: settings.wisp }
+  : settings.relay === 'cloudflare' ? { websocket: cloudflareRelay(), transport: 'wsproxy' }
+  : { websocket: FLY_WISP };
 
 async function ensureTransport() {
   const opts = relayOptions(), key = JSON.stringify(opts);
@@ -258,7 +268,6 @@ const DEFAULT_BOOKMARKS = [
   brand('tiktok', '#ffffff'), brand('youtube', '#FF0000'),
   { name: 'music', url: '#music', icon: 'music' },
   { name: 'games', url: '#games', icon: 'gamepad-2' },
-  { name: 'profile', url: '#profile', icon: 'user' },
   { name: 'ai', url: '#ai', icon: 'sparkles' },
   { name: 'settings', url: '#settings', icon: 'settings' },
 ];
@@ -352,7 +361,8 @@ const SECTIONS = [
   ['browsing', 'globe', [
     { key: 'engine', type: 'select', label: 'Search engine', desc: 'Used when what you type is not a web address.', options: Object.entries(ENGINES).map(([k, [n]]) => [k, n]) },
     { key: 'proxy', type: 'toggle', label: 'Open sites through the proxy', desc: 'Searches and bookmarks load inside algebra with Scramjet. Turn off to go to sites directly.' },
-    { key: 'wisp', type: 'text', label: 'Wisp server', desc: 'Leave empty to use this site\'s built-in relay. Sites hosted on Cloudflare (like Discord) only work through your own Wisp server.', placeholder: () => 'empty = built-in relay' },
+    { key: 'relay', type: 'select', label: 'Relay', desc: 'Carries the proxy\'s traffic. Fly reaches every site; the Cloudflare backup can\'t open Cloudflare-hosted sites like Discord.', options: [['fly', 'Fly.io (default)'], ['cloudflare', 'Cloudflare (backup)']] },
+    { key: 'wisp', type: 'text', label: 'Custom Wisp server', desc: 'Overrides the relay above. Leave empty to use it.', placeholder: () => 'wss://your-server/' },
   ]],
 ];
 
@@ -399,7 +409,7 @@ function control(o) {
       if (val && !/^wss?:\/\/\S+$/i.test(val)) { toast('Wisp servers start with wss:// or ws://'); i.value = settings[o.key]; return; }
       set(o.key, val && !val.endsWith('/') ? val + '/' : val);
       i.value = settings[o.key];
-      toast(val ? 'Wisp server saved' : 'Using this site\'s relay');
+      toast(val ? 'Custom Wisp server saved' : 'Using the relay above');
     });
     return i;
   }
@@ -791,20 +801,293 @@ document.getElementById('ai-new').addEventListener('click', () => openChat(null)
 document.getElementById('ai-find').addEventListener('input', renderChatList);
 document.getElementById('ai-toggle').addEventListener('click', () => document.getElementById('ai').classList.toggle('side-closed'));
 
+// ---------- music ----------
+// Two legal sources: Audius (artists upload for free streaming, full songs) and Apple's charts (official 30s previews).
+const AUDIUS = 'https://api.audius.co/v1';
+const APP = 'app_name=algebra';
+const GENRES = ['all', 'Hip-Hop/Rap', 'Electronic', 'Lo-Fi', 'Pop', 'R&B/Soul', 'Rock', 'Alternative', 'House', 'Dubstep', 'Ambient'];
+const audio = document.getElementById('audio');
+const player = document.getElementById('player');
+const PKEY = 'algebra.player';
+let queue = [], qi = -1, shuffle = false, repeat = 'off'; // repeat: off | all | one
+let musicLoaded = false, genre = 'all', trendingTracks = [], chartTracks = [];
+
+const audiusTrack = t => ({
+  id: `audius-${t.id}`, t: t.title, a: t.user?.name || 'unknown',
+  art: t.artwork?.['480x480'] || '', src: `${AUDIUS}/tracks/${t.id}/stream?${APP}`, preview: false,
+});
+const appleTrack = r => ({
+  id: `apple-${r.trackId}`, t: r.trackName, a: r.artistName,
+  art: r.artworkUrl100?.replace('100x100bb', '600x600bb') || '', src: r.previewUrl,
+  e: r.trackExplicitness === 'explicit', preview: true,
+});
+const fmtTime = s => !isFinite(s) ? '0:00' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+console.assert(fmtTime(170) === '2:50' && fmtTime(NaN) === '0:00', 'fmtTime');
+
+async function getJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+function artImg(src, cls) {
+  const img = el('img', cls);
+  img.alt = '';
+  img.loading = 'lazy';
+  img.addEventListener('load', () => img.classList.add('loaded'));
+  img.addEventListener('error', () => img.removeAttribute('src')); // some Audius art servers are down: show the tile color instead
+  if (src) img.src = src;
+  return img;
+}
+
+// big square cards for the charts shelf
+function renderShelf(box, tracks) {
+  box.replaceChildren(...tracks.map((t, i) => {
+    const b = el('button', 'album');
+    b.type = 'button';
+    b.style.setProperty('--i', Math.min(i, 10));
+    const cover = el('span', 'album-cover');
+    cover.append(artImg(t.art), el('span', 'album-rank', i + 1), el('span', 'album-play'));
+    b.append(cover, el('strong', '', t.t), el('span', '', t.a));
+    b.addEventListener('click', () => playList(tracks, i));
+    return b;
+  }));
+}
+
+// compact rows: art, title, artist, badge
+function renderTracks(box, tracks) {
+  if (!tracks.length) { box.replaceChildren(el('p', 'games-status', 'Nothing found.')); return; }
+  box.replaceChildren(...tracks.map((t, i) => {
+    const b = el('button', 'track');
+    b.type = 'button';
+    b.dataset.id = t.id;
+    b.style.setProperty('--i', Math.min(i, 14));
+    const text = el('span', 'track-text');
+    const title = el('strong', '', t.t);
+    if (t.e) title.append(el('span', 'explicit', 'E'));
+    text.append(title, el('span', '', t.a));
+    b.append(artImg(t.art, 'track-art'), text, el('span', `tag${t.preview ? '' : ' full'}`, t.preview ? '30s' : 'full'));
+    b.addEventListener('click', () => playList(tracks, i));
+    return b;
+  }));
+  markPlaying();
+}
+
+async function loadTrending() {
+  const box = document.getElementById('trending');
+  try {
+    const q = genre === 'all' ? '' : `&genre=${encodeURIComponent(genre)}`;
+    trendingTracks = (await getJson(`${AUDIUS}/tracks/trending?${APP}&limit=40&time=week${q}`)).data
+      .filter(t => t.is_streamable !== false).map(audiusTrack);
+    renderTracks(box, trendingTracks);
+  } catch {
+    box.replaceChildren(el('p', 'games-status', 'Couldn\'t load trending songs. Try again later.'));
+  }
+}
+
+async function loadMusic() {
+  if (musicLoaded) return;
+  musicLoaded = true;
+  document.getElementById('music-genres').replaceChildren(...GENRES.map(g =>
+    chip(g === 'all' ? 'all genres' : g.toLowerCase(), null, g === genre, () => { genre = g; renderGenreChips(); loadTrending(); })));
+  loadTrending();
+  try {
+    chartTracks = await getJson('/charts.json');
+    renderShelf(document.getElementById('charts'), chartTracks);
+  } catch {
+    document.getElementById('charts').replaceChildren(el('p', 'games-status', 'Couldn\'t load the charts right now.'));
+  }
+}
+function renderGenreChips() {
+  document.querySelectorAll('#music-genres .chip').forEach((c, i) => c.setAttribute('aria-pressed', GENRES[i] === genre));
+}
+
+let musicSearchTimer;
+document.getElementById('music-q').addEventListener('input', e => {
+  clearTimeout(musicSearchTimer);
+  musicSearchTimer = setTimeout(() => searchMusic(e.target.value.trim()), 300);
+});
+async function searchMusic(q) {
+  document.getElementById('music-results').hidden = !q;
+  document.getElementById('music-home').hidden = !!q;
+  if (!q) return;
+  const box = document.getElementById('music-search-list');
+  box.replaceChildren(el('p', 'games-status', 'searching…'));
+  // full songs first, then previews of mainstream songs
+  const [full, previews] = await Promise.all([
+    getJson(`${AUDIUS}/tracks/search?${APP}&limit=20&query=${encodeURIComponent(q)}`).then(j => j.data.filter(t => t.is_streamable !== false).map(audiusTrack)).catch(() => []),
+    getJson(`https://itunes.apple.com/search?entity=song&limit=20&term=${encodeURIComponent(q)}`).then(j => j.results.filter(r => r.previewUrl).map(appleTrack)).catch(() => []),
+  ]);
+  if (document.getElementById('music-q').value.trim() === q) renderTracks(box, [...full, ...previews]);
+}
+
+document.getElementById('charts-play').addEventListener('click', () => chartTracks.length && playList(chartTracks, 0));
+document.getElementById('trending-play').addEventListener('click', () => trendingTracks.length && playList(trendingTracks, 0));
+
+// ----- playback -----
+function playList(list, i) {
+  queue = list.slice();
+  qi = i;
+  loadTrack();
+}
+
+function loadTrack() {
+  const t = queue[qi];
+  if (!t) return;
+  audio.src = t.src;
+  audio.play().catch(() => {});
+  player.hidden = false;
+  document.getElementById('pl-title').textContent = t.t;
+  document.getElementById('pl-artist').textContent = t.preview ? `${t.a} · preview` : t.a;
+  const img = document.getElementById('pl-img');
+  img.classList.toggle('none', !t.art);
+  if (t.art) img.src = t.art; else img.removeAttribute('src');
+  markPlaying();
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({ title: t.t, artist: t.a, artwork: t.art ? [{ src: t.art, sizes: '512x512' }] : [] });
+  }
+}
+
+function step(dir, auto = false) {
+  if (!queue.length) return;
+  if (auto && repeat === 'one') { audio.currentTime = 0; audio.play(); return; }
+  if (dir < 0 && audio.currentTime > 3) { audio.currentTime = 0; return; }
+  let n = shuffle && queue.length > 1 ? (qi + 1 + Math.floor(Math.random() * (queue.length - 1))) % queue.length : qi + dir;
+  if (n >= queue.length || n < 0) {
+    if (repeat !== 'all' && auto) { audio.pause(); return; }
+    n = (n + queue.length) % queue.length;
+  }
+  qi = n;
+  loadTrack();
+}
+
+function markPlaying() {
+  const id = queue[qi]?.id;
+  document.querySelectorAll('.track').forEach(b => b.classList.toggle('now', b.dataset.id === id));
+}
+
+const togglePlay = () => (audio.paused ? audio.play().catch(() => {}) : audio.pause());
+document.getElementById('pl-img').addEventListener('error', e => e.target.classList.add('none'));
+
+audio.addEventListener('play', () => { player.classList.add('playing'); setPlayLabel(); });
+audio.addEventListener('pause', () => { player.classList.remove('playing'); setPlayLabel(); });
+audio.addEventListener('ended', () => step(1, true));
+audio.addEventListener('error', () => {
+  if (!audio.src || player.hidden) return;
+  toast('That song couldn\'t play. Skipping to the next one.');
+  setTimeout(() => step(1, true), 800);
+});
+audio.addEventListener('timeupdate', () => {
+  if (seeking) return;
+  document.getElementById('pl-cur').textContent = fmtTime(audio.currentTime);
+  document.getElementById('pl-dur').textContent = fmtTime(audio.duration);
+  document.getElementById('pl-seek').value = audio.duration ? (audio.currentTime / audio.duration) * 1000 : 0;
+});
+function setPlayLabel() {
+  const label = audio.paused ? 'Play' : 'Pause';
+  player.querySelector('.pl-play').setAttribute('aria-label', label);
+  document.getElementById('pl-art').setAttribute('aria-label', label);
+}
+
+let seeking = false;
+const seek = document.getElementById('pl-seek');
+seek.addEventListener('input', () => { seeking = true; document.getElementById('pl-cur').textContent = fmtTime((seek.value / 1000) * audio.duration); });
+seek.addEventListener('change', () => { if (audio.duration) audio.currentTime = (seek.value / 1000) * audio.duration; seeking = false; });
+
+const vol = document.getElementById('pl-vol');
+const savedPlayer = read(PKEY) || {};
+audio.volume = vol.value = savedPlayer.volume ?? 0.8;
+vol.addEventListener('input', () => { audio.volume = vol.value; savePlayer({ volume: +vol.value }); });
+function savePlayer(patch) { Object.assign(savedPlayer, patch); write(PKEY, savedPlayer); }
+
+const playerActions = {
+  toggle: togglePlay,
+  next: () => step(1),
+  prev: () => step(-1),
+  shuffle: b => { shuffle = !shuffle; b.setAttribute('aria-pressed', shuffle); },
+  repeat: b => {
+    repeat = { off: 'all', all: 'one', one: 'off' }[repeat];
+    b.setAttribute('aria-pressed', repeat !== 'off');
+    b.setAttribute('aria-label', `Repeat: ${repeat}`);
+    b.classList.toggle('one', repeat === 'one');
+  },
+  collapse: () => setBubble(true),
+  expand: () => setBubble(false),
+};
+player.querySelectorAll('[data-pl]').forEach(b => b.addEventListener('click', e => {
+  e.stopPropagation();
+  playerActions[b.dataset.pl](b);
+}));
+document.getElementById('pl-art').addEventListener('click', () => { if (!moved) togglePlay(); });
+
+if ('mediaSession' in navigator) {
+  navigator.mediaSession.setActionHandler('play', () => audio.play());
+  navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+  navigator.mediaSession.setActionHandler('nexttrack', () => step(1));
+  navigator.mediaSession.setActionHandler('previoustrack', () => step(-1));
+}
+
+// ----- floating card / bubble: draggable anywhere except the music page, where it docks as a bar -----
+function setBubble(on) {
+  player.classList.toggle('bubble', on);
+  savePlayer({ bubble: on });
+  requestAnimationFrame(() => placePlayer(savedPlayer.x, savedPlayer.y));
+}
+function placePlayer(x, y) {
+  // never dragged (or docked as a bar): sit in the CSS default spot, bottom right
+  if (player.classList.contains('bar') || x == null) { player.style.left = player.style.top = player.style.right = player.style.bottom = ''; return; }
+  const r = player.getBoundingClientRect();
+  player.style.right = player.style.bottom = 'auto';
+  player.style.left = `${Math.max(8, Math.min(x, innerWidth - r.width - 8))}px`;
+  player.style.top = `${Math.max(8, Math.min(y, innerHeight - r.height - 8))}px`;
+}
+let drag = null, moved = false;
+player.addEventListener('pointerdown', e => {
+  if (player.classList.contains('bar') || e.target.closest('input, [data-pl]')) return;
+  const r = player.getBoundingClientRect();
+  drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, sx: e.clientX, sy: e.clientY };
+  moved = false;
+});
+player.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (!moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) return; // a tap, not a drag
+  // capture only once it's really a drag; capturing on press would swallow taps on the cover
+  if (!moved) player.setPointerCapture(e.pointerId);
+  moved = true;
+  player.classList.add('dragging');
+  placePlayer(e.clientX - drag.dx, e.clientY - drag.dy);
+});
+player.addEventListener('pointercancel', () => { drag = null; player.classList.remove('dragging'); });
+player.addEventListener('pointerup', () => {
+  if (!drag) return;
+  drag = null;
+  player.classList.remove('dragging');
+  if (moved) {
+    const r = player.getBoundingClientRect();
+    savePlayer({ x: r.left, y: r.top });
+    setTimeout(() => { moved = false; }, 0); // let the click after a drag see it was a drag
+  }
+});
+addEventListener('resize', () => placePlayer(savedPlayer.x, savedPlayer.y));
+if (savedPlayer.bubble) player.classList.add('bubble');
+
 // ---------- routing ----------
-const views = { home: hero, games: document.getElementById('games'), ai: document.getElementById('ai'), settings: document.getElementById('settings') };
+const views = { home: hero, games: document.getElementById('games'), music: document.getElementById('music'), ai: document.getElementById('ai'), settings: document.getElementById('settings') };
 function route() {
-  const view = { '#settings': 'settings', '#games': 'games', '#ai': 'ai' }[location.hash] || 'home';
+  const view = { '#settings': 'settings', '#games': 'games', '#ai': 'ai', '#music': 'music' }[location.hash] || 'home';
   for (const [name, v] of Object.entries(views)) v.hidden = name !== view;
   document.body.dataset.view = view;
-  document.querySelectorAll('.sidebar a').forEach(a =>
+  document.querySelectorAll('.dock a').forEach(a =>
     a.classList.toggle('active', a.getAttribute('href') === (view === 'home' ? '#' : `#${view}`)));
   closeBrowser();
   if (view === 'games') { loadGames(); fillGames(); }
   if (view === 'ai') { renderMessages(); renderChatList(); }
+  if (view === 'music') { loadMusic(); document.getElementById('music-greet').textContent = dayPart(); }
+  player.classList.toggle('bar', view === 'music');
+  placePlayer(savedPlayer.x, savedPlayer.y);
 }
 addEventListener('hashchange', route);
-document.querySelector('.sidebar').addEventListener('click', closeBrowser);
+document.querySelector('.dock').addEventListener('click', closeBrowser);
 
 renderSettings();
 renderBookmarks();

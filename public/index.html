@@ -6,7 +6,7 @@
   <title>algebra</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link id="font" rel="stylesheet" crossorigin href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;400;500;700;800&display=swap">
+  <link id="font" rel="stylesheet" crossorigin href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,21 +15,23 @@
       <g transform="rotate(-12 32 32)">
         <rect x="9" y="9" width="46" height="46" rx="11" fill="#e6f07a"/>
         <rect x="9" y="9" width="46" height="46" rx="11" fill="none" stroke="#9aa53a" stroke-width="3"/>
-        <text x="32" y="43" text-anchor="middle" font-family="Outfit, sans-serif" font-weight="800" font-size="27" fill="#141414">x²</text>
+        <text x="32" y="43" text-anchor="middle" font-family="Sora, Outfit, sans-serif" font-weight="800" font-size="27" fill="#141414">x²</text>
       </g>
     </symbol>
   </svg>
 
   <canvas id="bg" aria-hidden="true"></canvas>
 
-  <nav class="sidebar" aria-label="Main">
-    <a href="#" class="side-logo" aria-label="Home"><svg><use href="#logo"/></svg></a>
-    <a href="#games" aria-label="Games" title="Games"><i data-lucide="gamepad-2"></i></a>
-    <a href="#profile" aria-label="Profile" title="Profile"><i data-lucide="user"></i></a>
-    <a href="#ai" aria-label="AI" title="AI"><i data-lucide="sparkles"></i></a>
-    <a href="#music" aria-label="Music" title="Music"><i data-lucide="music"></i></a>
-    <a href="#chat" aria-label="Chat" title="Chat"><i data-lucide="message-square"></i></a>
-    <a href="#settings" class="side-bottom" aria-label="Settings" title="Settings"><i data-lucide="settings"></i></a>
+  <div class="aurora" aria-hidden="true"></div>
+
+  <nav class="dock" aria-label="Main">
+    <a href="#" class="dock-logo" aria-label="algebra home"><svg><use href="#logo"/></svg></a>
+    <span class="dock-sep" aria-hidden="true"></span>
+    <a href="#" title="Home"><i data-lucide="house"></i><span>home</span></a>
+    <a href="#games" title="Games"><i data-lucide="gamepad-2"></i><span>games</span></a>
+    <a href="#music" title="Music"><i data-lucide="music"></i><span>music</span></a>
+    <a href="#ai" title="AI"><i data-lucide="sparkles"></i><span>ai</span></a>
+    <a href="#settings" title="Settings"><i data-lucide="settings"></i><span>settings</span></a>
   </nav>
 
   <main>
@@ -69,6 +71,37 @@
       <p class="games-status" id="game-status">loading games…</p>
       <div class="game-grid" id="game-grid"></div>
       <div id="game-more" aria-hidden="true"></div>
+    </section>
+
+    <section class="view music" id="music" hidden>
+      <header class="music-head">
+        <h1 id="music-greet">music</h1>
+        <label class="search music-search">
+          <i data-lucide="search"></i>
+          <span class="sr-only">Search songs</span>
+          <input id="music-q" type="search" placeholder="search songs and artists" autocomplete="off">
+        </label>
+      </header>
+
+      <div id="music-results" hidden>
+        <div class="row-head"><h2 class="row-title">results</h2></div>
+        <div class="track-grid" id="music-search-list"></div>
+      </div>
+
+      <div id="music-home">
+        <div class="row-head">
+          <h2 class="row-title">top charts <span class="tag">30s previews</span></h2>
+          <button type="button" class="pill-btn" id="charts-play"><i data-lucide="play"></i>play all</button>
+        </div>
+        <div class="shelf" id="charts"><p class="games-status">loading charts…</p></div>
+
+        <div class="row-head">
+          <h2 class="row-title">trending <span class="tag full">full songs</span></h2>
+          <button type="button" class="pill-btn" id="trending-play"><i data-lucide="play"></i>play all</button>
+        </div>
+        <div class="chips" id="music-genres" role="group" aria-label="Genre"></div>
+        <div class="track-grid" id="trending"><p class="games-status">loading…</p></div>
+      </div>
     </section>
 
     <section class="view ai" id="ai" hidden>
@@ -155,6 +188,35 @@
     </form>
     <div class="frame-wrap" id="frame-wrap"></div>
   </section>
+
+  <!-- one player for the whole site: a full bar on the music page, a draggable card elsewhere, or a bubble -->
+  <div class="player" id="player" hidden>
+    <div class="pl-now">
+      <button type="button" class="pl-art" id="pl-art" aria-label="Pause"><img id="pl-img" alt=""><span class="pl-art-icon"><i data-lucide="play" class="i-play"></i><i data-lucide="pause" class="i-pause"></i></span></button>
+      <div class="pl-info"><strong id="pl-title">nothing playing</strong><span id="pl-artist"></span></div>
+    </div>
+    <div class="pl-center">
+      <div class="pl-controls">
+        <button type="button" data-pl="shuffle" aria-label="Shuffle" aria-pressed="false" class="pl-extra"><i data-lucide="shuffle"></i></button>
+        <button type="button" data-pl="prev" aria-label="Previous"><i data-lucide="skip-back"></i></button>
+        <button type="button" data-pl="toggle" class="pl-play" aria-label="Play"><i data-lucide="play" class="i-play"></i><i data-lucide="pause" class="i-pause"></i></button>
+        <button type="button" data-pl="next" aria-label="Next"><i data-lucide="skip-forward"></i></button>
+        <button type="button" data-pl="repeat" aria-label="Repeat: off" aria-pressed="false" class="pl-extra"><i data-lucide="repeat"></i></button>
+      </div>
+      <div class="pl-seek">
+        <span id="pl-cur">0:00</span>
+        <input type="range" id="pl-seek" min="0" max="1000" value="0" aria-label="Seek">
+        <span id="pl-dur">0:00</span>
+      </div>
+    </div>
+    <div class="pl-side">
+      <i data-lucide="volume-2" class="pl-vol-icon"></i>
+      <input type="range" id="pl-vol" min="0" max="1" step="0.01" aria-label="Volume">
+      <button type="button" data-pl="collapse" class="pl-collapse" aria-label="Shrink player" title="Shrink"><i data-lucide="minimize-2"></i></button>
+    </div>
+    <button type="button" data-pl="expand" class="pl-expand" aria-label="Expand player" title="Expand"><i data-lucide="maximize-2"></i></button>
+    <audio id="audio" preload="none"></audio>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
