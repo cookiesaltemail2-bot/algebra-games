@@ -52,7 +52,10 @@ async function chat(request, env) {
   if (messages.at(-1)?.role !== 'user') return json({ error: 'Send a message first.' }, 400);
 
   try {
-    const stream = await env.AI.run(model, { messages: [{ role: 'system', content: SYSTEM }, ...messages], stream: true, max_tokens: 1500 });
+    const options = { messages: [{ role: 'system', content: SYSTEM }, ...messages], stream: true, max_tokens: 1500 };
+    // Gemma 4 thinks before answering by default: ~380 hidden tokens for a five-word reply. Off = faster, ~10x cheaper.
+    if (model.includes('gemma-4')) options.chat_template_kwargs = { enable_thinking: false };
+    const stream = await env.AI.run(model, options);
     return new Response(stream, { headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' } });
   } catch (e) {
     const used = /4006|allocation|neurons/i.test(String(e?.message || e));
