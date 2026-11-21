@@ -21,7 +21,7 @@ body {
   font-family: var(--font), system-ui, sans-serif;
   accent-color: var(--accent);
 }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
@@ -621,7 +621,60 @@ a:focus-visible, button:focus-visible, .tile:focus-visible, input:focus-visible 
   .ai.side-closed .ai-side { display: flex; position: fixed; inset: 16px 16px 80px; z-index: 4; background: #111114; }
 }
 
+/* ---------- motion ---------- */
+:root { --ease: cubic-bezier(.2, .8, .2, 1); }
+html { scroll-behavior: smooth; }
+@keyframes view-in { from { opacity: 0; transform: translateY(14px); } }
+@keyframes rise { from { opacity: 0; transform: translateY(12px) scale(.98); } }
+
+/* switching tabs: the new page glides in */
+.view:not([hidden]), .browser:not([hidden]) { animation: view-in .45s var(--ease) both; }
+
+/* home builds in piece by piece instead of all at once */
+.hero.view:not([hidden]) { animation: none; }
+.hero > * { animation: rise .6s var(--ease) backwards; }
+.hero > :nth-child(2) { animation-delay: .06s; }
+.hero > :nth-child(3) { animation-delay: .12s; }
+.hero > :nth-child(4) { animation-delay: .18s; }
+.hero > :nth-child(5) { animation-delay: .24s; }
+
+/* cards cascade in; "backwards" so the hover lift still works once they've landed */
+.tile, .game, .ai-idea { animation: rise .5s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 35ms + .1s); }
+.settings-body > * { animation: rise .5s var(--ease) backwards; }
+.settings-body > :nth-child(2) { animation-delay: .06s; }
+.settings-body > :nth-child(3) { animation-delay: .12s; }
+.settings-body > :nth-child(4) { animation-delay: .18s; }
+.settings-body > :nth-child(5) { animation-delay: .24s; }
+.ai-msg.pop { animation: rise .35s var(--ease) backwards; }
+.ai-msg.pop + .ai-msg.pop { animation-delay: .08s; }
+
+/* thumbnails fade in as they arrive; a letter stands in if the picture can't load */
+.game img { opacity: 0; transition: opacity .4s ease; }
+.game img.loaded { opacity: 1; }
+.game-ph {
+  width: 100%; aspect-ratio: 4 / 3;
+  display: grid; place-items: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, #18181b), #101012);
+  font-size: 42px; font-weight: 800;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* everything clickable gives a little press */
+.sidebar a, .chip, .pill-btn, .ai-new, .ai-send, .bm-head button, .bar button, .play-bar a, .play-bar button, .danger, .ai-idea, .tile, .game {
+  transition-property: background, border-color, box-shadow, color, transform, opacity;
+  transition-duration: .2s;
+  transition-timing-function: var(--ease);
+}
+.sidebar a:active, .chip:active, .pill-btn:active, .ai-new:active, .ai-send:active, .bm-head button:active,
+.bar button:active, .play-bar a:active, .play-bar button:active, .danger:active { transform: scale(.94); }
+.tile:active, .game:active, .ai-idea:active { transform: scale(.97); }
+.ai-new:hover, .ai-send:hover { filter: brightness(1.08); }
+.switch::after { transition: transform .25s var(--ease), background .2s; }
+
 .reduce *, .reduce *::before, .reduce *::after { animation: none !important; transition: none !important; }
+.reduce .game img { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
 }

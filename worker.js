@@ -13,6 +13,7 @@ export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (pathname === '/api/chat') return chat(request, env);
+    if (pathname === '/img') return gameImage(request);
     const m = pathname.match(/^\/wsproxy\/([a-z0-9.-]+):(\d{1,5})$/i);
     if (m && request.headers.get('Upgrade') === 'websocket') {
       const port = Number(m[2]);
@@ -22,6 +23,21 @@ export default {
     return env.ASSETS.fetch(request);
   },
 };
+
+// ---------- game thumbnails ----------
+// Fallback for browsers whose ad blocker or tracking prevention blocks the catalogs' image hosts:
+// the page retries a failed thumbnail here, same-origin. Only those two hosts, so it isn't an open proxy.
+export const IMG_HOSTS = ['img.gamemonetize.com', 'img.gamedistribution.com'];
+
+async function gameImage(request) {
+  let url;
+  try { url = new URL(new URL(request.url).searchParams.get('u')); } catch {}
+  if (!url || url.protocol !== 'https:' || !IMG_HOSTS.includes(url.hostname)) return new Response('not allowed', { status: 400 });
+  const r = await fetch(url, { cf: { cacheEverything: true, cacheTtl: 604800 } });
+  const type = r.headers.get('content-type') || '';
+  if (!r.ok || !type.startsWith('image/')) return new Response('not found', { status: 404 });
+  return new Response(r.body, { headers: { 'content-type': type, 'cache-control': 'public, max-age=604800' } });
+}
 
 // ---------- AI chat (Cloudflare Workers AI, free daily allowance) ----------
 // Free-plan models only; keep in sync with AI_MODELS in public/app.js.

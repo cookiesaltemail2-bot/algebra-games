@@ -274,6 +274,7 @@ function renderBookmarks() {
     const a = document.createElement('a');
     a.className = 'tile';
     a.href = b.url;
+    a.style.setProperty('--i', i);
     if (b.color) a.style.setProperty('--c', b.color);
     const ic = document.createElement('span');
     ic.className = 'ic';
@@ -541,17 +542,25 @@ const playUrl = g => `/play?g=${encodeURIComponent(g.u)}&t=${encodeURIComponent(
 function fillGames() {
   while (renderedGames < shownGames.length && gameMore.getBoundingClientRect().top < innerHeight + 800) {
     const frag = document.createDocumentFragment();
-    for (const g of shownGames.slice(renderedGames, renderedGames + GAME_PAGE)) {
+    shownGames.slice(renderedGames, renderedGames + GAME_PAGE).forEach((g, i) => {
       const a = el('a', 'game');
       a.href = playUrl(g);
+      a.style.setProperty('--i', Math.min(i, 14)); // stagger the first cards of each batch
       const img = el('img');
       img.alt = '';
       img.loading = 'lazy';
       img.decoding = 'async';
+      img.addEventListener('load', () => img.classList.add('loaded'));
+      img.addEventListener('error', () => {
+        // blocked image host (ad blocker / tracking prevention): retry through our own /img, then show a letter
+        if (!img.dataset.retried && g.i) { img.dataset.retried = '1'; img.src = `/img?u=${encodeURIComponent(g.i)}`; }
+        else img.replaceWith(el('span', 'game-ph', g.n[0].toUpperCase()));
+      });
       if (g.i) img.src = g.i;
+      else queueMicrotask(() => img.dispatchEvent(new Event('error')));
       a.append(img, el('span', 'game-name', g.n), el('span', 'game-src', `${SOURCES[g.s]} · ${g.c}`));
       frag.append(a);
-    }
+    });
     renderedGames += GAME_PAGE;
     gameGrid.append(frag);
   }
@@ -707,6 +716,7 @@ async function sendChat(text) {
   aiInput.value = '';
   aiInput.style.height = '';
   renderMessages();
+  [...aiMsgs.children].slice(-2).forEach(m => m.classList.add('pop')); // only the new pair animates in
   renderChatList();
   aiScroll.scrollTop = aiScroll.scrollHeight;
 
@@ -730,9 +740,9 @@ async function sendChat(text) {
       const lines = buffer.split('\n');
       buffer = lines.pop();
       reply.content += lines.map(sseDelta).join('');
-      if (chat === current) {
+      if (chat === current && reply.content) {
         const nearBottom = aiScroll.scrollHeight - aiScroll.scrollTop - aiScroll.clientHeight < 80;
-        renderMessages();
+        aiMsgs.lastElementChild.innerHTML = md(reply.content); // update just the streaming bubble
         if (nearBottom) aiScroll.scrollTop = aiScroll.scrollHeight;
       }
     }
@@ -754,9 +764,10 @@ async function sendChat(text) {
 }
 
 aiModel.append(...AI_MODELS.map(([id, name]) => new Option(name, id)));
-document.getElementById('ai-ideas').append(...IDEAS.map(([icon, title, prompt]) => {
+document.getElementById('ai-ideas').append(...IDEAS.map(([icon, title, prompt], i) => {
   const b = el('button', 'ai-idea');
   b.type = 'button';
+  b.style.setProperty('--i', i);
   b.innerHTML = `<i data-lucide="${icon}"></i>`;
   const text = el('span');
   text.append(el('strong', '', title), el('span', '', prompt));
