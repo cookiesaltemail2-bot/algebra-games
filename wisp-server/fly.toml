@@ -1,0 +1,22 @@
+# Fly.io config for the Wisp server. App names are global on Fly: if "algebra-wisp" is taken,
+# `fly launch` asks for another one and rewrites the line below.
+app = "algebra-wisp"
+primary_region = "dfw"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # sleeps when nobody is connected so you only pay while it's used; the first connection after a nap takes a second or two
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  # open WebSockets count as connections, so a busy machine is never stopped mid-session
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 250
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
