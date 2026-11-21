@@ -1,0 +1,17 @@
+{
+  "name": "algebra-wisp-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Wisp relay for the algebra proxy",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "AGPL-3.0-only",
+  "dependencies": {
+    "@mercuryworkshop/wisp-js": "^0.5.3"
+  }
+}
