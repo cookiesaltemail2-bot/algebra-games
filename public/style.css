@@ -891,3 +891,229 @@ html { scroll-behavior: smooth; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   html { scroll-behavior: auto; }
 }
+
+/* ---------- design pass: warm, editorial, rail navigation ---------- */
+/* Deliberately different from the old cold/lime look: espresso background,
+   amber + terracotta glows, static blueprint grid instead of a blurred aurora,
+   a floating left rail, split home layout and serif display headings. */
+:root {
+  --bg: #0b0908;
+  --panel: rgba(26, 21, 17, 0.76);
+  --panel-hi: rgba(38, 30, 24, 0.9);
+  --line: rgba(255, 241, 224, 0.07);
+  --line-hi: rgba(255, 241, 224, 0.17);
+  --text: #f8f1e7;
+  --muted: #a99d8d;
+  --accent: #f3b562;
+  --accent-2: #e8744f;
+  --display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --glow: 0 0 0 1px color-mix(in srgb, var(--accent) 38%, transparent), 0 16px 44px -14px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+body {
+  background:
+    radial-gradient(120% 90% at 100% 0%, #17110c 0%, transparent 62%),
+    radial-gradient(80% 70% at 0% 100%, #120d0a 0%, transparent 60%),
+    var(--bg);
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 241, 224, 0.14);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 241, 224, 0.24); background-clip: padding-box; border: 3px solid transparent; }
+
+/* static blueprint grid + two soft glows; nothing drifts, so the games page stays light */
+.aurora {
+  inset: 0;
+  background:
+    radial-gradient(42% 36% at 8% 4%, rgba(243, 181, 98, 0.11), transparent 70%),
+    radial-gradient(46% 42% at 96% 92%, rgba(232, 116, 79, 0.10), transparent 70%),
+    linear-gradient(rgba(255, 241, 224, 0.033) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 241, 224, 0.033) 1px, transparent 1px);
+  background-size: auto, auto, 54px 54px, 54px 54px;
+  filter: none;
+  animation: none;
+  -webkit-mask-image: radial-gradient(130% 110% at 50% 0%, #000 35%, transparent 92%);
+  mask-image: radial-gradient(130% 110% at 50% 0%, #000 35%, transparent 92%);
+}
+
+/* serif display type for the big statements */
+.clock, .brand-row, .games-head h1, .music-head h1, .settings-head h1,
+.ai-empty h2, .ai-brand, .dock-logo {
+  font-family: var(--display);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+.clock {
+  font-size: clamp(72px, 11vw, 132px);
+  font-weight: 300;
+  letter-spacing: -0.04em;
+  background: linear-gradient(180deg, #fff7ec 22%, color-mix(in srgb, var(--accent) 58%, #f6e7d2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 42px color-mix(in srgb, var(--accent) 24%, transparent));
+}
+.brand-row { font-size: 19px; font-weight: 600; }
+.greet {
+  margin: 12px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---------- floating left rail instead of a top pill ---------- */
+.dock {
+  top: 50%;
+  left: 20px;
+  transform: translateY(-50%);
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 26px;
+  background: rgba(22, 17, 13, 0.72);
+  animation: rail-in .6s var(--ease) backwards;
+}
+@keyframes rail-in { from { opacity: 0; transform: translate(-16px, -50%); } }
+.dock a {
+  width: 46px; height: 46px;
+  justify-content: center;
+  padding: 0;
+}
+.dock a span { display: none; }
+.dock a.active:not(.dock-logo) { color: #171009; }
+.dock .dock-logo { width: 54px; height: 54px; padding: 0; margin-bottom: 2px; }
+.dock .dock-logo svg { width: 34px; height: 34px; }
+.dock-sep { width: 28px; height: 1px; margin: 4px 0; }
+
+/* leave room for the rail; pages stay optically centred */
+main { padding: 48px 24px 120px 104px; }
+body[data-view="ai"] main { padding-top: 48px; }
+.browser { inset: 0 0 0 96px; }
+
+/* ---------- split home ---------- */
+.hero {
+  width: min(1120px, 100%);
+  min-height: calc(100vh - 168px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  align-items: center;
+  gap: 64px;
+  text-align: left;
+}
+.hero-left { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.hero-right { min-width: 0; }
+.hero-right .search {
+  width: 100%;
+  height: 58px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(255, 244, 229, 0.055), rgba(255, 244, 229, 0.015));
+}
+.hero-right .bm-head { margin-top: 30px; }
+.hero-right .grid { justify-content: start; }
+.search input:focus-visible { outline: none; }
+
+/* the pieces arrive one after another */
+.hero-left > *, .hero-right > * { animation: rise .6s var(--ease) backwards; }
+.hero-right > :nth-child(2) { animation-delay: .08s; }
+.hero-right > :nth-child(3) { animation-delay: .16s; }
+
+/* anchor scrolling should leave a little air above a page heading */
+.view { scroll-margin-top: 28px; }
+
+/* bookmarks read as small album tiles: warmer, softer, still squircle */
+.tile .ic {
+  border-radius: 18px;
+  background: linear-gradient(155deg, rgba(255, 241, 224, 0.09), rgba(255, 241, 224, 0.015));
+}
+.tile:hover .ic {
+  background: linear-gradient(155deg, color-mix(in srgb, var(--c) 24%, transparent), color-mix(in srgb, var(--c) 5%, transparent));
+}
+
+/* soft warm surfaces */
+.card, .ai-side, .ai-main { background: var(--panel); }
+.toast { background: #241b14; }
+.pl-controls .pl-play, .album-play, .ai-new, .ai-send, .switch[aria-checked="true"], .chip[aria-pressed="true"] { color: #171009; }
+.star, .album-rank { -webkit-text-stroke-color: rgba(255, 246, 233, 0.9); }
+
+/* player: deeper glass and a warmer halo */
+.player {
+  width: 390px;
+  background: rgba(24, 19, 15, 0.85);
+  box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.85), 0 0 46px -22px var(--accent);
+}
+
+/* thin progress line on the floating card; the docked bar has a real seek slider */
+.pl-line {
+  position: absolute; left: 14px; right: 14px; bottom: 6px;
+  height: 2px; border-radius: 2px;
+  background: rgba(255, 241, 224, 0.09);
+  overflow: hidden;
+  pointer-events: none;
+}
+.pl-line i {
+  display: block; height: 100%; width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.player.bar .pl-line, .player.bubble .pl-line { display: none; }
+
+/* ---------- smaller windows ---------- */
+@media (max-width: 980px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 34px;
+    min-height: 0;
+    align-items: start;
+  }
+  .hero-right { width: 100%; }
+  .clock { font-size: clamp(64px, 15vw, 104px); }
+  main { padding-left: 96px; }
+}
+
+@media (max-width: 640px) {
+  /* the rail becomes the familiar bottom dock, icons only */
+  .dock {
+    top: auto;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    flex-direction: row;
+    gap: 4px;
+    padding: 6px;
+    border-radius: 999px;
+    animation: dock-in .6s var(--ease) backwards;
+  }
+  .dock .dock-logo, .dock .dock-sep { display: none; }
+  .dock a { width: 40px; height: 40px; }
+  .dock a.active span { max-width: 0; opacity: 0; }
+  main, body[data-view="ai"] main { padding: 16px 16px 90px; }
+  body[data-view="music"] main { padding-bottom: 230px; }
+  .player.bar { bottom: 84px !important; padding: 10px 12px 12px; }
+  .player.bar .pl-now { flex: 1; }
+  .player.bar .pl-center { flex: none; }
+  .player.bar .pl-extra { display: none !important; }
+  .player.bar .pl-line { display: block; left: 18px; right: 18px; bottom: 5px; }
+  .player:not(.bar) { bottom: 80px; }
+  .browser { inset: 0; }
+  .hero { gap: 26px; }
+  .hero-right .search { height: 54px; }
+  .greet { font-size: 11px; letter-spacing: 0.12em; }
+  /* settings: the side nav becomes a scrollable row */
+  .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .settings-nav { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .settings-nav button { white-space: nowrap; }
+  .row { flex-wrap: nowrap; }
+  .row:has(.swatches), .row:has(.text), .row:has(.range) { flex-wrap: wrap; }
+  .row:has(.text) .text { flex: 1 1 100%; width: 100%; }
+  .row:has(.range) .range { flex: 1 1 100%; justify-content: space-between; }
+  .row:has(.range) .range input { flex: 1; width: auto; }
+}

@@ -3,7 +3,7 @@ const read = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { 
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
 // ---------- settings ----------
-const ACCENTS = ['#d4f55c', '#f4f4f5', '#f87171', '#fb923c', '#facc15', '#4ade80', '#2dd4bf', '#60a5fa', '#a78bfa', '#f472b6'];
+const ACCENTS = ['#f3b562', '#e8744f', '#f4f4f5', '#f87171', '#facc15', '#4ade80', '#2dd4bf', '#60a5fa', '#a78bfa', '#f472b6'];
 const FONTS = {
   Sora: 'Sora:wght@200;400;500;600;700;800',
   Outfit: 'Outfit:wght@200;400;500;700;800',
@@ -20,7 +20,7 @@ const ENGINES = {
   brave: ['Brave', 'https://search.brave.com/search?q=%s'],
 };
 const DEFAULT_SETTINGS = {
-  v: 2, accent: '#d4f55c', matchAccent: false, interactive: true, density: 30, speed: 1, dim: 0, font: 'Sora', reduceMotion: false,
+  v: 3, accent: '#f3b562', matchAccent: false, interactive: true, density: 30, speed: 1, dim: 0, font: 'Sora', reduceMotion: false,
   showClock: true, clock24: false, hints: true, showBookmarks: true,
   engine: 'duckduckgo', proxy: true, relay: 'fly', wisp: '',
 };
@@ -31,6 +31,7 @@ if (!stored.v) {
   if (stored.accent === '#f4f4f5') delete stored.accent;
   if (stored.font === 'Outfit') delete stored.font;
 }
+if (stored.v === 2 && stored.accent === '#d4f55c') delete stored.accent; // last season's default lime
 let settings = { ...DEFAULT_SETTINGS, ...stored, v: DEFAULT_SETTINGS.v };
 const osReduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const reduced = () => settings.reduceMotion || osReduce;
@@ -92,12 +93,12 @@ function draw() {
       row[j] = strandY(j * STEP, p);
       j ? ctx.lineTo(j * STEP, row[j]) : ctx.moveTo(0, row[j]);
     }
-    ctx.strokeStyle = `rgba(${rgb},${0.14 + 0.3 * Math.sin(p * Math.PI)})`;
+    ctx.strokeStyle = `rgba(${rgb},${0.08 + 0.2 * Math.sin(p * Math.PI)})`;
     ctx.stroke();
     rows.push(row);
   }
   // faint cross-strands give the mesh look
-  ctx.strokeStyle = `rgba(${rgb},0.05)`;
+  ctx.strokeStyle = `rgba(${rgb},0.032)`;
   ctx.beginPath();
   for (let j = 0; j < cols; j += 3) {
     ctx.moveTo(j * STEP, rows[0][j]);
@@ -107,8 +108,9 @@ function draw() {
 }
 
 function frame() {
-  // skip drawing while the proxy browser covers the page
-  if (!document.body.classList.contains('browsing') && (dirty || !reduced())) {
+  // the wave belongs to home; everywhere else it is hidden and idle (keeps games smooth)
+  const home = document.body.dataset.view === 'home';
+  if (home && !document.body.classList.contains('browsing') && (dirty || !reduced())) {
     if (!reduced()) {
       t += 0.006 * settings.speed;
       const target = settings.interactive ? mouse : rest();
@@ -472,7 +474,7 @@ function apply() {
   root.setProperty('--font', settings.font === 'System' ? 'system-ui' : `"${settings.font}"`);
   const fontHref = FONTS[settings.font] && `https://fonts.googleapis.com/css2?family=${FONTS[settings.font]}&display=swap`;
   if (fontHref && fontLink.href !== fontHref) fontLink.href = fontHref;
-  canvas.style.opacity = [1, 0.7, 0.45, 0.25][settings.dim];
+  canvas.style.opacity = document.body.dataset.view === 'home' ? [1, 0.7, 0.45, 0.25][settings.dim] : 0;
   document.body.classList.toggle('reduce', reduced());
   clock.hidden = greet.hidden = !settings.showClock;
   grid.hidden = document.getElementById('bm-head').hidden = !settings.showBookmarks;
@@ -802,25 +804,33 @@ document.getElementById('ai-find').addEventListener('input', renderChatList);
 document.getElementById('ai-toggle').addEventListener('click', () => document.getElementById('ai').classList.toggle('side-closed'));
 
 // ---------- music ----------
-// Two legal sources: Audius (artists upload for free streaming, full songs) and Apple's charts (official 30s previews).
-const AUDIUS = 'https://api.audius.co/v1';
-const APP = 'app_name=algebra';
-const GENRES = ['all', 'Hip-Hop/Rap', 'Electronic', 'Lo-Fi', 'Pop', 'R&B/Soul', 'Rock', 'Alternative', 'House', 'Dubstep', 'Ambient'];
+// One source: TIDAL, through the commonsensehealthcare.org music API.
+// Browse rows feed the shelves, search feeds the results, and the same API
+// hands back the artwork and the full-length stream for every track.
+const MUSIC = '/api/music';
+const GENRES = [
+  ['hits', 'top hits'], ['pop', 'pop'], ['hiphop', 'hip-hop'], ['rnb', 'r&b'],
+  ['indie', 'indie'], ['rock', 'rock'], ['latin', 'latin'], ['electronic', 'electronic'],
+  ['kpop', 'k-pop'], ['chill', 'chill'],
+];
 const audio = document.getElementById('audio');
 const player = document.getElementById('player');
 const PKEY = 'algebra.player';
-let queue = [], qi = -1, shuffle = false, repeat = 'off'; // repeat: off | all | one
-let musicLoaded = false, genre = 'all', trendingTracks = [], chartTracks = [];
+let queue = [], qi = -1, shuffle = false, repeat = 'off', playFailures = 0; // repeat: off | all | one
+let musicLoaded = false, genre = 'hits', trendingTracks = [], chartTracks = [];
 
-const audiusTrack = t => ({
-  id: `audius-${t.id}`, t: t.title, a: t.user?.name || 'unknown',
-  art: t.artwork?.['480x480'] || '', src: `${AUDIUS}/tracks/${t.id}/stream?${APP}`, preview: false,
-});
-const appleTrack = r => ({
-  id: `apple-${r.trackId}`, t: r.trackName, a: r.artistName,
-  art: r.artworkUrl100?.replace('100x100bb', '600x600bb') || '', src: r.previewUrl,
-  e: r.trackExplicitness === 'explicit', preview: true,
-});
+const appImage = url => `/img?u=${encodeURIComponent(url)}`;
+const tidalStream = t => `${MUSIC}/stream?${new URLSearchParams({
+  id: String(t.id), source: t.source || 'tidal', title: t.title,
+  artist: t.artist, duration: String(Math.round(t.duration || 0)),
+})}`;
+const tidalTrack = t => {
+  const src = tidalStream(t);
+  return {
+    id: `tidal-${t.id}`, t: t.title, a: t.artist || 'unknown',
+    art: t.artwork || '', src, e: !!t.explicit,
+  };
+};
 const fmtTime = s => !isFinite(s) ? '0:00' : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 console.assert(fmtTime(170) === '2:50' && fmtTime(NaN) === '0:00', 'fmtTime');
 
@@ -835,7 +845,16 @@ function artImg(src, cls) {
   img.alt = '';
   img.loading = 'lazy';
   img.addEventListener('load', () => img.classList.add('loaded'));
-  img.addEventListener('error', () => img.removeAttribute('src')); // some Audius art servers are down: show the tile color instead
+  img.addEventListener('error', () => {
+    // Edge Tracking Prevention / ad blockers can block the CDN directly.
+    // Retry once through the same-origin image fallback, then show the tile.
+    if (src && !img.dataset.proxied) {
+      img.dataset.proxied = '1';
+      img.src = appImage(src);
+      return;
+    }
+    img.removeAttribute('src');
+  });
   if (src) img.src = src;
   return img;
 }
@@ -866,40 +885,50 @@ function renderTracks(box, tracks) {
     const title = el('strong', '', t.t);
     if (t.e) title.append(el('span', 'explicit', 'E'));
     text.append(title, el('span', '', t.a));
-    b.append(artImg(t.art, 'track-art'), text, el('span', `tag${t.preview ? '' : ' full'}`, t.preview ? '30s' : 'full'));
+    b.append(artImg(t.art, 'track-art'), text);
     b.addEventListener('click', () => playList(tracks, i));
     return b;
   }));
   markPlaying();
 }
 
+let browsePromise = null;
+async function getBrowse() {
+  if (!browsePromise) {
+    browsePromise = getJson(`${MUSIC}/browse`).catch(e => { browsePromise = null; throw e; });
+  }
+  return browsePromise;
+}
+
 async function loadTrending() {
   const box = document.getElementById('trending');
   try {
-    const q = genre === 'all' ? '' : `&genre=${encodeURIComponent(genre)}`;
-    trendingTracks = (await getJson(`${AUDIUS}/tracks/trending?${APP}&limit=40&time=week${q}`)).data
-      .filter(t => t.is_streamable !== false).map(audiusTrack);
+    const rows = (await getBrowse()).rows || {};
+    const list = rows[genre] || rows.hits || [];
+    trendingTracks = list.map(tidalTrack);
     renderTracks(box, trendingTracks);
   } catch {
-    box.replaceChildren(el('p', 'games-status', 'Couldn\'t load trending songs. Try again later.'));
+    box.replaceChildren(el('p', 'games-status', 'Couldn\'t load songs from TIDAL. Try again in a moment.'));
   }
 }
 
 async function loadMusic() {
   if (musicLoaded) return;
   musicLoaded = true;
-  document.getElementById('music-genres').replaceChildren(...GENRES.map(g =>
-    chip(g === 'all' ? 'all genres' : g.toLowerCase(), null, g === genre, () => { genre = g; renderGenreChips(); loadTrending(); })));
+  document.getElementById('music-genres').replaceChildren(...GENRES.map(([key, label]) =>
+    chip(label, null, key === genre, () => { genre = key; renderGenreChips(); loadTrending(); })));
   loadTrending();
   try {
-    chartTracks = await getJson('/charts.json');
+    const rows = (await getBrowse()).rows || {};
+    chartTracks = (rows.hits || []).slice(0, 14).map(tidalTrack);
     renderShelf(document.getElementById('charts'), chartTracks);
   } catch {
+    chartTracks = [];
     document.getElementById('charts').replaceChildren(el('p', 'games-status', 'Couldn\'t load the charts right now.'));
   }
 }
 function renderGenreChips() {
-  document.querySelectorAll('#music-genres .chip').forEach((c, i) => c.setAttribute('aria-pressed', GENRES[i] === genre));
+  document.querySelectorAll('#music-genres .chip').forEach((c, i) => c.setAttribute('aria-pressed', GENRES[i][0] === genre));
 }
 
 let musicSearchTimer;
@@ -913,12 +942,18 @@ async function searchMusic(q) {
   if (!q) return;
   const box = document.getElementById('music-search-list');
   box.replaceChildren(el('p', 'games-status', 'searching…'));
-  // full songs first, then previews of mainstream songs
-  const [full, previews] = await Promise.all([
-    getJson(`${AUDIUS}/tracks/search?${APP}&limit=20&query=${encodeURIComponent(q)}`).then(j => j.data.filter(t => t.is_streamable !== false).map(audiusTrack)).catch(() => []),
-    getJson(`https://itunes.apple.com/search?entity=song&limit=20&term=${encodeURIComponent(q)}`).then(j => j.results.filter(r => r.previewUrl).map(appleTrack)).catch(() => []),
-  ]);
-  if (document.getElementById('music-q').value.trim() === q) renderTracks(box, [...full, ...previews]);
+  let tracks = [];
+  try {
+    const j = await getJson(`${MUSIC}/search?q=${encodeURIComponent(q)}&limit=30&source=tidal`);
+    tracks = (j.items || []).map(tidalTrack);
+  } catch {
+    // TIDAL search can hiccup; fall back to the API's default catalog (its streams work too)
+    try {
+      const j = await getJson(`${MUSIC}/search?q=${encodeURIComponent(q)}&limit=30`);
+      tracks = (j.items || []).map(tidalTrack);
+    } catch {}
+  }
+  if (document.getElementById('music-q').value.trim() === q) renderTracks(box, tracks);
 }
 
 document.getElementById('charts-play').addEventListener('click', () => chartTracks.length && playList(chartTracks, 0));
@@ -926,6 +961,7 @@ document.getElementById('trending-play').addEventListener('click', () => trendin
 
 // ----- playback -----
 function playList(list, i) {
+  playFailures = 0;
   queue = list.slice();
   qi = i;
   loadTrack();
@@ -938,13 +974,16 @@ function loadTrack() {
   audio.play().catch(() => {});
   player.hidden = false;
   document.getElementById('pl-title').textContent = t.t;
-  document.getElementById('pl-artist').textContent = t.preview ? `${t.a} · preview` : t.a;
+  document.getElementById('pl-artist').textContent = t.a;
+  document.getElementById('pl-line').style.width = '0%';
   const img = document.getElementById('pl-img');
   img.classList.toggle('none', !t.art);
+  img.classList.remove('loaded');
+  delete img.dataset.proxied;
   if (t.art) img.src = t.art; else img.removeAttribute('src');
   markPlaying();
   if ('mediaSession' in navigator) {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: t.t, artist: t.a, artwork: t.art ? [{ src: t.art, sizes: '512x512' }] : [] });
+    navigator.mediaSession.metadata = new MediaMetadata({ title: t.t, artist: t.a, artwork: t.art ? [{ src: new URL(appImage(t.art), location.href).href, sizes: '512x512' }] : [] });
   }
 }
 
@@ -967,13 +1006,34 @@ function markPlaying() {
 }
 
 const togglePlay = () => (audio.paused ? audio.play().catch(() => {}) : audio.pause());
-document.getElementById('pl-img').addEventListener('error', e => e.target.classList.add('none'));
+const plImg = document.getElementById('pl-img');
+plImg.addEventListener('load', () => plImg.classList.add('loaded'));
+plImg.addEventListener('error', e => {
+  const img = e.target;
+  const art = queue[qi]?.art;
+  if (art && !img.dataset.proxied) {
+    img.dataset.proxied = '1';
+    img.src = appImage(art);
+    return;
+  }
+  img.classList.add('none');
+  img.removeAttribute('src');
+});
 
 audio.addEventListener('play', () => { player.classList.add('playing'); setPlayLabel(); });
+audio.addEventListener('playing', () => { playFailures = 0; });
 audio.addEventListener('pause', () => { player.classList.remove('playing'); setPlayLabel(); });
 audio.addEventListener('ended', () => step(1, true));
 audio.addEventListener('error', () => {
   if (!audio.src || player.hidden) return;
+  playFailures += 1;
+  if (playFailures >= 3) {
+    // Stop the skip loop: if every track fails, retrying forever just spams
+    // toasts. Ask the user to unblock the site instead.
+    audio.pause();
+    toast('Playback keeps failing. Turn off tracking protection or ad blockers for this site, then try again.');
+    return;
+  }
   toast('That song couldn\'t play. Skipping to the next one.');
   setTimeout(() => step(1, true), 800);
 });
@@ -982,6 +1042,7 @@ audio.addEventListener('timeupdate', () => {
   document.getElementById('pl-cur').textContent = fmtTime(audio.currentTime);
   document.getElementById('pl-dur').textContent = fmtTime(audio.duration);
   document.getElementById('pl-seek').value = audio.duration ? (audio.currentTime / audio.duration) * 1000 : 0;
+  document.getElementById('pl-line').style.width = audio.duration ? `${(audio.currentTime / audio.duration) * 100}%` : '0%';
 });
 function setPlayLabel() {
   const label = audio.paused ? 'Play' : 'Pause';
@@ -1077,6 +1138,9 @@ function route() {
   const view = { '#settings': 'settings', '#games': 'games', '#ai': 'ai', '#music': 'music' }[location.hash] || 'home';
   for (const [name, v] of Object.entries(views)) v.hidden = name !== view;
   document.body.dataset.view = view;
+  canvas.style.opacity = view === 'home' ? [1, 0.7, 0.45, 0.25][settings.dim] : 0;
+  dirty = true;
+  scrollTo(0, 0);
   document.querySelectorAll('.dock a').forEach(a =>
     a.classList.toggle('active', a.getAttribute('href') === (view === 'home' ? '#' : `#${view}`)));
   closeBrowser();

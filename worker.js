@@ -13,7 +13,9 @@ export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (pathname === '/api/chat') return chat(request, env);
-    if (pathname === '/img') return gameImage(request);
+    if (pathname.startsWith('/api/music/')) return music(request);
+    if (pathname === '/img') return proxyMedia(request, isImageHost, 'img');
+    if (pathname === '/audio') return proxyMedia(request, isAudioHost, 'audio');
     const m = pathname.match(/^\/wsproxy\/([a-z0-9.-]+):(\d{1,5})$/i);
     if (m && request.headers.get('Upgrade') === 'websocket') {
       const port = Number(m[2]);
@@ -24,19 +26,119 @@ export default {
   },
 };
 
-// ---------- game thumbnails ----------
-// Fallback for browsers whose ad blocker or tracking prevention blocks the catalogs' image hosts:
-// the page retries a failed thumbnail here, same-origin. Only those two hosts, so it isn't an open proxy.
-export const IMG_HOSTS = ['img.gamemonetize.com', 'img.gamedistribution.com'];
+// ---------- music API ----------
+// TIDAL browse/search/artwork/stream come from the commonsensehealthcare.org
+// music API. That server is same-origin only (no CORS on most routes), so the
+// Worker relays just /api/music/* and forwards Range requests for seeking.
+const MUSIC_API = 'https://commonsensehealthcare.org';
 
-async function gameImage(request) {
+async function music(request) {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return new Response('method not allowed', { status: 405 });
+  }
+  const incoming = new URL(request.url);
+  const target = new URL(MUSIC_API + incoming.pathname + incoming.search);
+  // path traversal (e.g. /api/music/../admin) must not reach other APIs
+  if (!target.pathname.startsWith('/api/music/')) {
+    return new Response('not allowed', { status: 400 });
+  }
+
+  const headers = new Headers();
+  const range = request.headers.get('Range');
+  if (range) headers.set('Range', range);
+
+  let upstream;
+  try {
+    upstream = await fetch(target, { method: request.method, headers });
+  } catch {
+    return new Response('music server unreachable', { status: 502 });
+  }
+
+  const out = new Headers();
+  for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+    const value = upstream.headers.get(name);
+    if (value) out.set(name, value);
+  }
+  out.set('cache-control', incoming.pathname === '/api/music/stream'
+    ? 'public, max-age=3600'
+    : 'public, max-age=60');
+
+  return new Response(request.method === 'HEAD' ? null : upstream.body, {
+    status: upstream.status,
+    headers: out,
+  });
+}
+
+// ---------- same-origin media fallback ----------
+// Edge Tracking Prevention and ad blockers block the catalog / music hosts.
+// These endpoints retry the exact allowlisted hosts from our own origin, so
+// they are not open proxies. /audio forwards Range requests so seeking works.
+export const IMG_HOSTS = ['img.gamemonetize.com', 'img.gamedistribution.com', 'v.monophonic.digital'];
+const IMAGE_SUFFIXES = ['.mzstatic.com', '.audius.co', '.tidal.com'];
+const AUDIO_EXACT = new Set(['api.audius.co', 'audio-ssl.itunes.apple.com', 'commonsensehealthcare.org']);
+const AUDIO_SUFFIXES = ['.audius.co', '.itunes.apple.com', '.mzstatic.com'];
+
+function isImageHost(host) {
+  return IMG_HOSTS.includes(host)
+    || IMAGE_SUFFIXES.some(suffix => host.endsWith(suffix))
+    || /^audius-content-[a-z0-9-]+\.(?:figment\.io|digitaloceanspaces\.com)$/.test(host);
+}
+
+function isAudioHost(host) {
+  return AUDIO_EXACT.has(host) || AUDIO_SUFFIXES.some(suffix => host.endsWith(suffix));
+}
+
+async function fetchAllowed(url, allowed, headers, method, depth = 0) {
+  const response = await fetch(url, { method, headers, redirect: 'manual' });
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('Location');
+    if (!location || depth >= 4) return new Response('bad upstream redirect', { status: 502 });
+    const next = new URL(location, url);
+    if (next.protocol !== 'https:' || !allowed(next.hostname)) {
+      return new Response('redirect not allowed', { status: 403 });
+    }
+    return fetchAllowed(next, allowed, headers, method, depth + 1);
+  }
+  return response;
+}
+
+async function proxyMedia(request, allowed, mode) {
   let url;
   try { url = new URL(new URL(request.url).searchParams.get('u')); } catch {}
-  if (!url || url.protocol !== 'https:' || !IMG_HOSTS.includes(url.hostname)) return new Response('not allowed', { status: 400 });
-  const r = await fetch(url, { cf: { cacheEverything: true, cacheTtl: 604800 } });
-  const type = r.headers.get('content-type') || '';
-  if (!r.ok || !type.startsWith('image/')) return new Response('not found', { status: 404 });
-  return new Response(r.body, { headers: { 'content-type': type, 'cache-control': 'public, max-age=604800' } });
+  if (!url || url.protocol !== 'https:' || !allowed(url.hostname)) {
+    return new Response('not allowed', { status: 400 });
+  }
+
+  const headers = new Headers();
+  const range = request.headers.get('Range');
+  if (mode === 'audio' && range) headers.set('Range', range);
+
+  const response = await fetchAllowed(
+    url,
+    allowed,
+    headers,
+    request.method === 'HEAD' ? 'HEAD' : 'GET'
+  );
+
+  if (!response.ok) return new Response('not found', { status: 404 });
+
+  const type = response.headers.get('content-type') || '';
+  if (mode === 'img' && type && !type.startsWith('image/')) {
+    return new Response('not an image', { status: 404 });
+  }
+
+  const out = new Headers();
+  for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified']) {
+    const value = response.headers.get(name);
+    if (value) out.set(name, value);
+  }
+  out.set('accept-ranges', 'bytes');
+  out.set('cache-control', mode === 'audio' ? 'public, max-age=3600' : 'public, max-age=604800');
+
+  return new Response(request.method === 'HEAD' ? null : response.body, {
+    status: response.status,
+    headers: out,
+  });
 }
 
 // ---------- AI chat (Cloudflare Workers AI, free daily allowance) ----------

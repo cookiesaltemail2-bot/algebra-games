@@ -7,14 +7,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link id="font" rel="stylesheet" crossorigin href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <symbol id="logo" viewBox="0 0 64 64">
       <g transform="rotate(-12 32 32)">
-        <rect x="9" y="9" width="46" height="46" rx="11" fill="#e6f07a"/>
-        <rect x="9" y="9" width="46" height="46" rx="11" fill="none" stroke="#9aa53a" stroke-width="3"/>
+        <rect x="9" y="9" width="46" height="46" rx="11" fill="#f3b562"/>
+        <rect x="9" y="9" width="46" height="46" rx="11" fill="none" stroke="#8a5a26" stroke-width="3"/>
         <text x="32" y="43" text-anchor="middle" font-family="Sora, Outfit, sans-serif" font-weight="800" font-size="27" fill="#141414">x²</text>
       </g>
     </symbol>
@@ -36,22 +37,26 @@
 
   <main>
     <section class="view hero" id="home">
-      <h1 class="brand-row"><svg class="hero-logo" aria-hidden="true"><use href="#logo"/></svg>algebra</h1>
-      <div class="clock" id="clock">--:--</div>
-      <p class="greet" id="greet"></p>
-
-      <form class="search" id="search" role="search">
-        <i data-lucide="search"></i>
-        <label for="q" class="sr-only">Search or enter a site</label>
-        <input id="q" type="text" placeholder="search something here" autocomplete="off">
-        <kbd aria-hidden="true">/</kbd>
-      </form>
-
-      <div class="bm-head" id="bm-head">
-        <span>bookmarks</span>
-        <button type="button" id="edit">edit</button>
+      <div class="hero-left">
+        <h1 class="brand-row"><svg class="hero-logo" aria-hidden="true"><use href="#logo"/></svg>algebra</h1>
+        <div class="clock" id="clock">--:--</div>
+        <p class="greet" id="greet"></p>
       </div>
-      <div class="grid" id="grid"></div>
+
+      <div class="hero-right">
+        <form class="search" id="search" role="search">
+          <i data-lucide="search"></i>
+          <label for="q" class="sr-only">Search or enter a site</label>
+          <input id="q" type="text" placeholder="search something here" autocomplete="off">
+          <kbd aria-hidden="true">/</kbd>
+        </form>
+
+        <div class="bm-head" id="bm-head">
+          <span>bookmarks</span>
+          <button type="button" id="edit">edit</button>
+        </div>
+        <div class="grid" id="grid"></div>
+      </div>
     </section>
 
     <section class="view games" id="games" hidden>
@@ -90,13 +95,13 @@
 
       <div id="music-home">
         <div class="row-head">
-          <h2 class="row-title">top charts <span class="tag">30s previews</span></h2>
+          <h2 class="row-title">top hits <span class="tag full">full songs</span></h2>
           <button type="button" class="pill-btn" id="charts-play"><i data-lucide="play"></i>play all</button>
         </div>
         <div class="shelf" id="charts"><p class="games-status">loading charts…</p></div>
 
         <div class="row-head">
-          <h2 class="row-title">trending <span class="tag full">full songs</span></h2>
+          <h2 class="row-title">trending <span class="tag">tidal</span></h2>
           <button type="button" class="pill-btn" id="trending-play"><i data-lucide="play"></i>play all</button>
         </div>
         <div class="chips" id="music-genres" role="group" aria-label="Genre"></div>
@@ -165,7 +170,7 @@
           </section>
           <details class="card credits">
             <summary>Credits</summary>
-            <p><a href="https://github.com/MercuryWorkshop/scramjet" target="_blank" rel="noopener">Scramjet</a>, <a href="https://github.com/MercuryWorkshop/bare-mux" target="_blank" rel="noopener">bare-mux</a> and <a href="https://github.com/MercuryWorkshop/CurlTransport" target="_blank" rel="noopener">libcurl-transport</a> by Mercury Workshop power the proxy. Games come from the <a href="https://gamemonetize.com" target="_blank" rel="noopener">GameMonetize</a> and <a href="https://gamedistribution.com" target="_blank" rel="noopener">GameDistribution</a> catalogs, which license them for embedding. Icons from <a href="https://lucide.dev" target="_blank" rel="noopener">Lucide</a> and <a href="https://simpleicons.org" target="_blank" rel="noopener">Simple Icons</a>.</p>
+            <p><a href="https://github.com/MercuryWorkshop/scramjet" target="_blank" rel="noopener">Scramjet</a>, <a href="https://github.com/MercuryWorkshop/bare-mux" target="_blank" rel="noopener">bare-mux</a> and <a href="https://github.com/MercuryWorkshop/CurlTransport" target="_blank" rel="noopener">libcurl-transport</a> by Mercury Workshop power the proxy. Games come from the <a href="https://gamemonetize.com" target="_blank" rel="noopener">GameMonetize</a> and <a href="https://gamedistribution.com" target="_blank" rel="noopener">GameDistribution</a> catalogs, which license them for embedding. Music search, artwork and full tracks come from the TIDAL catalog through the <a href="https://commonsensehealthcare.org/api/music/browse" target="_blank" rel="noopener">commonsensehealthcare.org music API</a>. Icons from <a href="https://lucide.dev" target="_blank" rel="noopener">Lucide</a> and <a href="https://simpleicons.org" target="_blank" rel="noopener">Simple Icons</a>.</p>
             <p>This site's source, including the relay, is on <a href="https://github.com/cookiesaltemail2-bot/algebra-games" target="_blank" rel="noopener">GitHub</a> under the AGPL-3.0.</p>
           </details>
           <p class="foot">algebra · v1</p>
@@ -215,6 +220,7 @@
       <button type="button" data-pl="collapse" class="pl-collapse" aria-label="Shrink player" title="Shrink"><i data-lucide="minimize-2"></i></button>
     </div>
     <button type="button" data-pl="expand" class="pl-expand" aria-label="Expand player" title="Expand"><i data-lucide="maximize-2"></i></button>
+    <span class="pl-line" aria-hidden="true"><i id="pl-line"></i></span>
     <audio id="audio" preload="none"></audio>
   </div>
 
