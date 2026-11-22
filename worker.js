@@ -13,6 +13,7 @@ export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
     if (pathname === '/api/chat') return chat(request, env);
+    if (pathname === '/api/lyrics') return lyrics(request);
     if (pathname.startsWith('/api/music/')) return music(request);
     if (pathname === '/img') return proxyMedia(request, isImageHost, 'img');
     if (pathname === '/audio') return proxyMedia(request, isAudioHost, 'audio');
@@ -152,7 +153,110 @@ const MAX_HISTORY = 20;   // messages sent per request; older ones are dropped t
 const MAX_CHARS = 8000;   // per message
 const SYSTEM = 'You are algebra ai, a friendly assistant on a games website. Many users are teens, so keep everything appropriate for them. Be clear and concise. You may use simple markdown: **bold**, lists, `code` and fenced code blocks.';
 
-const json = (body, status) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+const json = (body, status, extra) => new Response(JSON.stringify(body), {
+  status,
+  headers: { 'content-type': 'application/json', ...(extra || {}) },
+});
+
+// ---------- lyrics (LRCLIB) ----------
+// LRCLIB exposes its word-synced data as a YAML "lyricsfile" on get/search.
+// We relay it same-origin (CORS + caching) and rank search results by title,
+// artist and duration so remixes/live versions don't win.
+const LRCLIB = 'https://lrclib.net/api';
+
+const normLyricText = value => String(value || '')
+  .toLowerCase()
+  .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+  .replace(/[^\p{L}\p{N}]+/gu, ' ')
+  .trim();
+
+function bestLyricMatch(list, title, artist, duration) {
+  const wantedTitle = normLyricText(title);
+  const wantedArtist = normLyricText(artist);
+  let best = null, bestScore = -Infinity;
+  for (const item of list) {
+    if (!item || (!item.lyricsfile && !item.syncedLyrics && !item.plainLyrics)) continue;
+    const itemTitle = normLyricText(item.trackName);
+    const itemArtist = normLyricText(item.artistName);
+    let score = 0;
+    if (itemTitle === wantedTitle) score += 8;
+    else if (itemTitle.includes(wantedTitle) || wantedTitle.includes(itemTitle)) score += 5;
+    if (itemArtist === wantedArtist) score += 4;
+    else if (itemArtist.includes(wantedArtist) || wantedArtist.includes(itemArtist)) score += 2;
+    if (duration && Number(item.duration)) {
+      const diff = Math.abs(Number(item.duration) - duration);
+      if (diff <= 2) score += 4;
+      else if (diff <= 5) score += 2;
+      else if (diff <= 12) score += 1;
+      else score -= Math.min(diff / 20, 3);
+    }
+    if (item.hasWordSync) score += 0.5;
+    if (score > bestScore) { best = item; bestScore = score; }
+  }
+  return best;
+}
+
+async function lyrics(request) {
+  const incoming = new URL(request.url);
+  const title = (incoming.searchParams.get('title') || '').trim().slice(0, 200);
+  const artist = (incoming.searchParams.get('artist') || '').trim().slice(0, 200);
+  const album = (incoming.searchParams.get('album') || '').trim().slice(0, 200);
+  const duration = Math.round(Number(incoming.searchParams.get('duration')) || 0);
+  if (!title) return json({ error: 'title required' }, 400);
+
+  const headers = {
+    'user-agent': 'algebra-games/1.0 (https://github.com/cookiesaltemail2-bot/algebra-games)',
+    accept: 'application/json',
+  };
+  const primary = artist.split(',')[0].trim();
+
+  let track = null;
+  try {
+    const exact = new URLSearchParams({ track_name: title, artist_name: artist || primary, duration: String(duration) });
+    if (album) exact.set('album_name', album);
+    const response = await fetch(`${LRCLIB}/get?${exact}`, { headers });
+    if (response.ok) track = await response.json();
+  } catch {}
+
+  if (!track) {
+    const found = new Map();
+    const queries = [
+      { track_name: title, artist_name: artist },
+      { track_name: title, artist_name: primary },
+      { track_name: title },
+    ];
+    for (const query of queries) {
+      if (!query.artist_name) delete query.artist_name;
+      try {
+        const response = await fetch(`${LRCLIB}/search?${new URLSearchParams(query)}`, { headers });
+        if (!response.ok) continue;
+        for (const item of await response.json()) {
+          if (item?.id != null) found.set(item.id, item);
+        }
+      } catch {}
+      if (found.size >= 12) break;
+    }
+    track = bestLyricMatch([...found.values()], title, artist || primary, duration);
+  }
+
+  if (!track || (!track.lyricsfile && !track.syncedLyrics && !track.plainLyrics)) {
+    return json({ found: false }, 200, { 'cache-control': 'public, max-age=3600' });
+  }
+
+  return json({
+    found: true,
+    id: track.id,
+    title: track.trackName || title,
+    artist: track.artistName || artist,
+    album: track.albumName || album,
+    duration: track.duration || duration,
+    instrumental: !!track.instrumental,
+    hasWordSync: !!track.hasWordSync,
+    yaml: track.lyricsfile || '',
+    synced: track.syncedLyrics || '',
+    plain: track.plainLyrics || '',
+  }, 200, { 'cache-control': 'public, max-age=86400' });
+}
 
 async function chat(request, env) {
   if (request.method !== 'POST') return json({ error: 'POST only' }, 405);

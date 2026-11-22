@@ -828,6 +828,7 @@ const tidalTrack = t => {
   const src = tidalStream(t);
   return {
     id: `tidal-${t.id}`, t: t.title, a: t.artist || 'unknown',
+    al: t.album || '', dur: Number(t.duration) || 0,
     art: t.artwork || '', src, e: !!t.explicit,
   };
 };
@@ -976,6 +977,7 @@ function loadTrack() {
   document.getElementById('pl-title').textContent = t.t;
   document.getElementById('pl-artist').textContent = t.a;
   document.getElementById('pl-line').style.width = '0%';
+  paintSeek();
   const img = document.getElementById('pl-img');
   img.classList.toggle('none', !t.art);
   img.classList.remove('loaded');
@@ -985,6 +987,7 @@ function loadTrack() {
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({ title: t.t, artist: t.a, artwork: t.art ? [{ src: new URL(appImage(t.art), location.href).href, sizes: '512x512' }] : [] });
   }
+  if (lyricsOpen) syncLyrics();
 }
 
 function step(dir, auto = false) {
@@ -1043,6 +1046,7 @@ audio.addEventListener('timeupdate', () => {
   document.getElementById('pl-dur').textContent = fmtTime(audio.duration);
   document.getElementById('pl-seek').value = audio.duration ? (audio.currentTime / audio.duration) * 1000 : 0;
   document.getElementById('pl-line').style.width = audio.duration ? `${(audio.currentTime / audio.duration) * 100}%` : '0%';
+  paintSeek();
 });
 function setPlayLabel() {
   const label = audio.paused ? 'Play' : 'Pause';
@@ -1052,13 +1056,37 @@ function setPlayLabel() {
 
 let seeking = false;
 const seek = document.getElementById('pl-seek');
-seek.addEventListener('input', () => { seeking = true; document.getElementById('pl-cur').textContent = fmtTime((seek.value / 1000) * audio.duration); });
+seek.addEventListener('input', () => {
+  seeking = true;
+  document.getElementById('pl-cur').textContent = fmtTime((seek.value / 1000) * audio.duration);
+  paintSlider(seekSlider, seekFill, seekThumb, audio.duration ? seek.value / 1000 : 0);
+});
 seek.addEventListener('change', () => { if (audio.duration) audio.currentTime = (seek.value / 1000) * audio.duration; seeking = false; });
 
 const vol = document.getElementById('pl-vol');
+const seekSlider = document.getElementById('seek-slider');
+const seekFill = document.getElementById('seek-fill');
+const seekThumb = document.getElementById('seek-thumb');
+const volSlider = document.getElementById('vol-slider');
+const volFill = document.getElementById('vol-fill');
+const volThumb = document.getElementById('vol-thumb');
+
+function paintSlider(slider, fill, thumb, ratio) {
+  const pct = Math.max(0, Math.min(1, Number.isFinite(ratio) ? ratio : 0)) * 100;
+  fill.style.width = `${pct}%`;
+  thumb.style.left = `${pct}%`;
+}
+function paintSeek() {
+  paintSlider(seekSlider, seekFill, seekThumb, audio.duration ? audio.currentTime / audio.duration : 0);
+}
+function paintVol() {
+  paintSlider(volSlider, volFill, volThumb, audio.volume);
+}
+
 const savedPlayer = read(PKEY) || {};
 audio.volume = vol.value = savedPlayer.volume ?? 0.8;
-vol.addEventListener('input', () => { audio.volume = vol.value; savePlayer({ volume: +vol.value }); });
+paintVol();
+vol.addEventListener('input', () => { audio.volume = vol.value; paintVol(); savePlayer({ volume: +vol.value }); });
 function savePlayer(patch) { Object.assign(savedPlayer, patch); write(PKEY, savedPlayer); }
 
 const playerActions = {
@@ -1074,6 +1102,7 @@ const playerActions = {
   },
   collapse: () => setBubble(true),
   expand: () => setBubble(false),
+  lyrics: () => setLyricsOpen(!lyricsOpen),
 };
 player.querySelectorAll('[data-pl]').forEach(b => b.addEventListener('click', e => {
   e.stopPropagation();
@@ -1132,6 +1161,334 @@ player.addEventListener('pointerup', () => {
 addEventListener('resize', () => placePlayer(savedPlayer.x, savedPlayer.y));
 if (savedPlayer.bubble) player.classList.add('bubble');
 
+// ---------- lyrics (LRCLIB) ----------
+const lyricsPanel = document.getElementById('lyrics');
+const lyricsBg = document.getElementById('lyrics-bg');
+const lyricsCover = document.getElementById('lyrics-cover');
+const lyricsTitle = document.getElementById('lyrics-title');
+const lyricsArtist = document.getElementById('lyrics-artist');
+const lyricsScroll = document.getElementById('lyrics-scroll');
+const lyricsLinesEl = document.getElementById('lyrics-lines');
+const lyricsStatusEl = document.getElementById('lyrics-status');
+const LYRICS_CACHE = new Map();
+let lyricsOpen = false, lyricsLoading = false, lyricsToken = 0;
+let lyricsTrackId = null, lyricsMode = 'none', lyricsActive = -2, lyricsRAF = 0;
+let lyricRows = [];
+
+function setLyricsStatus(text) {
+  lyricsStatusEl.textContent = text || '';
+  lyricsStatusEl.hidden = !text;
+}
+
+function setLyricsOpen(on) {
+  if (on && !queue[qi]) { toast('Play a song first.'); return; }
+  lyricsOpen = on;
+  lyricsPanel.hidden = !on;
+  document.querySelectorAll('#lyrics-btn, .pl-lyrics').forEach(b => b.setAttribute('aria-pressed', String(on)));
+  if (on) {
+    syncLyrics();
+    startLyricsLoop();
+  } else {
+    cancelAnimationFrame(lyricsRAF);
+    lyricsRAF = 0;
+  }
+}
+
+function syncLyrics() {
+  const t = queue[qi];
+  if (!lyricsOpen || !t) return;
+  if (lyricsTrackId === t.id) {
+    if (lyricsMode === 'none' && !lyricsLoading) loadLyrics(t);
+    return;
+  }
+  lyricsToken += 1;
+  lyricsTrackId = t.id;
+  lyricsLoading = false;
+  lyricsMode = 'none';
+  lyricRows = [];
+  lyricsActive = -2;
+  lyricsLinesEl.replaceChildren();
+  lyricsScroll.scrollTop = 0;
+  lyricsTitle.textContent = t.t;
+  lyricsArtist.textContent = t.a;
+  const art = t.art ? appImage(t.art) : '';
+  if (art) {
+    lyricsBg.style.backgroundImage = `url("${art}")`;
+    lyricsCover.src = art;
+    lyricsCover.hidden = false;
+  } else {
+    lyricsBg.style.backgroundImage = 'none';
+    lyricsCover.hidden = true;
+    lyricsCover.removeAttribute('src');
+  }
+  lyricsStatusEl.hidden = false;
+  lyricsStatusEl.textContent = 'Finding lyrics…';
+  loadLyrics(t);
+}
+
+async function loadLyrics(t) {
+  if (lyricsLoading) return;
+  const token = lyricsToken;
+  const cached = LYRICS_CACHE.get(t.id);
+  if (cached) { applyLyrics(cached); return; }
+  lyricsLoading = true;
+  try {
+    const params = new URLSearchParams({
+      title: t.t, artist: t.a, album: t.al || '', duration: String(Math.round(t.dur || 0)),
+    });
+    const response = await fetch(`/api/lyrics?${params}`);
+    if (!response.ok) throw new Error(response.status);
+    const data = await response.json();
+    LYRICS_CACHE.set(t.id, data);
+    if (token !== lyricsToken) return;
+    if (lyricsOpen && queue[qi]?.id === t.id) applyLyrics(data);
+  } catch {
+    if (token === lyricsToken && lyricsOpen && queue[qi]?.id === t.id) {
+      lyricsMode = 'empty';
+      setLyricsStatus('Couldn\'t load lyrics for this song.');
+    }
+  } finally {
+    if (token === lyricsToken) lyricsLoading = false;
+  }
+}
+
+function yamlValue(raw) {
+  const s = String(raw).trim();
+  if (s.startsWith("'") && s.endsWith("'")) return s.slice(1, -1).replace(/''/g, "'");
+  if (s.startsWith('"') && s.endsWith('"')) {
+    try { return JSON.parse(s); } catch { return s.slice(1, -1); }
+  }
+  return s;
+}
+
+// LRCLIB's YAML "lyricsfile": metadata, timed lines, optional per-word timings,
+// and a plain block for songs without timing. Indentation varies between
+// serializer versions, so the parser tracks the line/word indents instead of
+// assuming a fixed number of spaces.
+function parseLyricsYaml(text) {
+  const lines = [];
+  let plain = '';
+  let plainIndent = null;
+  let mode = 'meta';
+  let lineIndent = null;
+  let line = null, word = null, inWords = false;
+  for (const raw of String(text).split(/\r?\n/)) {
+    if (/^plain:\s*\|/.test(raw)) { mode = 'plain'; line = null; word = null; continue; }
+    if (mode === 'plain') {
+      if (/^\S/.test(raw)) { mode = 'meta'; continue; }
+      if (raw.trim()) {
+        const indent = raw.match(/^\s*/)[0].length;
+        if (plainIndent === null) plainIndent = indent;
+        plain += raw.slice(Math.min(plainIndent, raw.length)) + '\n';
+      } else {
+        plain += '\n';
+      }
+      continue;
+    }
+    if (/^lines:\s*$/.test(raw)) { mode = 'lines'; continue; }
+    if (/^lines:\s*\[\]\s*$/.test(raw)) { mode = 'meta'; continue; }
+    if (mode !== 'lines') continue;
+
+    const item = raw.match(/^(\s*)- text:(.*)$/);
+    if (item) {
+      const indent = item[1].length;
+      if (line && inWords && indent > (lineIndent ?? 0)) {
+        word = { text: yamlValue(item[2]), start_ms: 0 };
+        line.words.push(word);
+        continue;
+      }
+      lineIndent = indent;
+      line = { text: yamlValue(item[2]), start_ms: 0, end_ms: 0, words: [] };
+      lines.push(line);
+      word = null;
+      inWords = false;
+      continue;
+    }
+    if (!line) continue;
+
+    const wordsTag = raw.match(/^(\s*)words:\s*(\[\])?\s*$/);
+    if (wordsTag) {
+      if (wordsTag[1].length === (lineIndent ?? 0) + 2) {
+        inWords = !wordsTag[2];
+        word = null;
+      }
+      continue;
+    }
+
+    const prop = raw.match(/^(\s*)(start_ms|end_ms):\s*(-?\d+(?:\.\d+)?)/);
+    if (!prop) continue;
+    const indent = prop[1].length;
+    const value = Number(prop[3]);
+    if (prop[2] === 'end_ms') { line.end_ms = value; continue; }
+    if (word && indent >= (lineIndent ?? 0) + 4) word.start_ms = value;
+    else line.start_ms = value;
+  }
+  return { lines, plain: plain.replace(/\n$/, '') };
+}
+
+function parseLrc(lrc) {
+  const lines = [];
+  for (const raw of String(lrc).split(/\r?\n/)) {
+    const times = [...raw.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)];
+    if (!times.length) continue;
+    const text = raw.replace(/\[[^\]]*\]/g, '').trim();
+    for (const match of times) {
+      lines.push({
+        text,
+        start_ms: (Number(match[1]) * 60 + Number(match[2])) * 1000,
+        end_ms: 0,
+        words: [],
+      });
+    }
+  }
+  lines.sort((a, b) => a.start_ms - b.start_ms);
+  lines.forEach((line, i) => { line.end_ms = lines[i + 1]?.start_ms || 0; });
+  return { lines, plain: '' };
+}
+
+function appendLyricsCredit() {
+  const credit = document.createElement('p');
+  credit.className = 'lyrics-credit';
+  credit.innerHTML = 'Lyrics from <a href="https://lrclib.net" target="_blank" rel="noopener">LRCLIB</a>';
+  lyricsLinesEl.append(credit);
+}
+
+function buildSyncedLyrics(lines) {
+  const frag = document.createDocumentFragment();
+  lyricRows = lines.map(line => {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'lyric-line';
+    const row = { ...line, el, wordEls: [] };
+    if (line.words?.length) {
+      for (const word of line.words) {
+        const span = document.createElement('span');
+        span.className = 'lyric-word';
+        span.textContent = word.text || '';
+        el.append(span);
+        row.wordEls.push({ el: span, start: Number(word.start_ms) || 0 });
+      }
+    } else if (line.text) {
+      el.textContent = line.text;
+    } else {
+      el.textContent = '♪';
+      el.classList.add('empty');
+    }
+    el.addEventListener('click', () => seekLyric(line));
+    frag.append(el);
+    return row;
+  });
+  lyricsLinesEl.replaceChildren(frag);
+  appendLyricsCredit();
+  lyricsActive = -2;
+}
+
+function buildPlainLyrics(text) {
+  const frag = document.createDocumentFragment();
+  for (const raw of String(text).split(/\r?\n/)) {
+    const el = document.createElement('div');
+    el.className = 'lyric-line plain';
+    if (raw.trim()) el.textContent = raw.trim();
+    else el.classList.add('spacer');
+    frag.append(el);
+  }
+  lyricsLinesEl.replaceChildren(frag);
+  appendLyricsCredit();
+  lyricsMode = 'plain';
+}
+
+function applyLyrics(data) {
+  if (!lyricsOpen) return;
+  if (!data?.found) { lyricsMode = 'empty'; setLyricsStatus('No lyrics found for this song.'); return; }
+  if (data.instrumental) { lyricsMode = 'empty'; setLyricsStatus('Instrumental track — no lyrics for this one.'); return; }
+  let parsed = { lines: [], plain: '' };
+  if (data.yaml) parsed = parseLyricsYaml(data.yaml);
+  if (!parsed.lines.length && data.synced) parsed = parseLrc(data.synced);
+  if (!parsed.lines.length && data.plain) parsed.plain = data.plain;
+  const timed = parsed.lines.length && parsed.lines.some(line => Number.isFinite(line.start_ms) && line.start_ms > 0);
+  if (timed) {
+    lyricsMode = 'synced';
+    setLyricsStatus('');
+    buildSyncedLyrics(parsed.lines);
+    updateLyrics(audio.currentTime * 1000);
+  } else if (parsed.plain) {
+    lyricsMode = 'plain';
+    setLyricsStatus('');
+    buildPlainLyrics(parsed.plain);
+  } else {
+    lyricsMode = 'empty';
+    setLyricsStatus('No lyrics found for this song.');
+  }
+}
+
+function seekLyric(line) {
+  if (!line || !Number.isFinite(line.start_ms)) return;
+  audio.currentTime = line.start_ms / 1000;
+  if (audio.paused) audio.play().catch(() => {});
+  if (lyricsMode === 'synced') updateLyrics(line.start_ms);
+}
+
+function scrollLyric(el) {
+  const top = el.offsetTop - lyricsScroll.clientHeight * 0.42 + el.offsetHeight / 2;
+  lyricsScroll.scrollTo({ top: Math.max(0, top), behavior: reduced() ? 'auto' : 'smooth' });
+}
+
+function updateLyrics(ms) {
+  if (!lyricsOpen || lyricsMode !== 'synced' || !lyricRows.length) return;
+  let lo = 0, hi = lyricRows.length - 1, index = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (lyricRows[mid].start_ms <= ms) { index = mid; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  if (index !== lyricsActive) {
+    if (lyricsActive >= 0) {
+      const previous = lyricRows[lyricsActive];
+      previous.el.classList.remove('active');
+      previous.wordEls.forEach(w => w.el.classList.remove('on', 'now'));
+    }
+    if (index >= 0) {
+      const line = lyricRows[index];
+      line.el.classList.add('active');
+      scrollLyric(line.el);
+    }
+    lyricsActive = index;
+  }
+  if (index >= 0) {
+    const line = lyricRows[index];
+    if (line.wordEls.length) {
+      let current = -1;
+      for (let i = 0; i < line.wordEls.length; i++) {
+        const word = line.wordEls[i];
+        const sung = ms >= word.start;
+        word.el.classList.toggle('on', sung);
+        if (sung) current = i;
+      }
+      line.wordEls.forEach((word, i) => word.el.classList.toggle('now', i === current));
+    }
+  }
+}
+
+function startLyricsLoop() {
+  cancelAnimationFrame(lyricsRAF);
+  const tick = () => {
+    if (!lyricsOpen) { lyricsRAF = 0; return; }
+    updateLyrics(audio.currentTime * 1000);
+    lyricsRAF = requestAnimationFrame(tick);
+  };
+  lyricsRAF = requestAnimationFrame(tick);
+}
+
+document.getElementById('lyrics-btn').addEventListener('click', () => setLyricsOpen(!lyricsOpen));
+document.getElementById('lyrics-close').addEventListener('click', () => setLyricsOpen(false));
+lyricsCover.addEventListener('error', () => { lyricsCover.hidden = true; });
+addEventListener('keydown', event => {
+  if (event.key === 'Escape' && lyricsOpen) {
+    event.preventDefault();
+    setLyricsOpen(false);
+  }
+});
+
 // ---------- routing ----------
 const views = { home: hero, games: document.getElementById('games'), music: document.getElementById('music'), ai: document.getElementById('ai'), settings: document.getElementById('settings') };
 function route() {
@@ -1148,6 +1505,7 @@ function route() {
   if (view === 'ai') { renderMessages(); renderChatList(); }
   if (view === 'music') { loadMusic(); document.getElementById('music-greet').textContent = dayPart(); }
   player.classList.toggle('bar', view === 'music');
+  if (view !== 'music') setLyricsOpen(false);
   placePlayer(savedPlayer.x, savedPlayer.y);
 }
 addEventListener('hashchange', route);

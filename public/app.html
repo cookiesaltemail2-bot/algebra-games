@@ -82,11 +82,14 @@
     <section class="view music" id="music" hidden>
       <header class="music-head">
         <h1 id="music-greet">music</h1>
-        <label class="search music-search">
-          <i data-lucide="search"></i>
-          <span class="sr-only">Search songs</span>
-          <input id="music-q" type="search" placeholder="search songs and artists" autocomplete="off">
-        </label>
+        <div class="music-tools">
+          <label class="search music-search">
+            <i data-lucide="search"></i>
+            <span class="sr-only">Search songs</span>
+            <input id="music-q" type="search" placeholder="search songs and artists" autocomplete="off">
+          </label>
+          <button type="button" class="pill-btn lyrics-toggle" id="lyrics-btn" aria-pressed="false"><i data-lucide="mic"></i>lyrics</button>
+        </div>
       </header>
 
       <div id="music-results" hidden>
@@ -180,6 +183,25 @@
     </section>
   </main>
 
+  <section class="lyrics-view" id="lyrics" hidden aria-label="Lyrics">
+    <div class="lyrics-bg" id="lyrics-bg" aria-hidden="true"></div>
+    <header class="lyrics-head">
+      <div class="lyrics-meta">
+        <img class="lyrics-cover" id="lyrics-cover" alt="" hidden>
+        <div>
+          <span class="lyrics-kicker">lyrics</span>
+          <strong id="lyrics-title">song</strong>
+          <span id="lyrics-artist"></span>
+        </div>
+      </div>
+      <button type="button" class="lyrics-close" id="lyrics-close" aria-label="Close lyrics"><i data-lucide="x"></i></button>
+    </header>
+    <div class="lyrics-scroll" id="lyrics-scroll">
+      <p class="lyrics-status" id="lyrics-status" hidden></p>
+      <div class="lyrics-lines" id="lyrics-lines"></div>
+    </div>
+  </section>
+
   <section class="browser" id="browser" hidden aria-label="Proxy browser">
     <form class="bar" id="bar">
       <button type="button" data-act="back" aria-label="Back"><i data-lucide="arrow-left"></i></button>
@@ -211,13 +233,22 @@
       </div>
       <div class="pl-seek">
         <span id="pl-cur">0:00</span>
-        <input type="range" id="pl-seek" min="0" max="1000" value="0" aria-label="Seek">
+        <div class="slider" id="seek-slider">
+          <div class="slider-track"><div class="slider-fill" id="seek-fill"></div></div>
+          <div class="slider-thumb" id="seek-thumb"></div>
+          <input type="range" id="pl-seek" min="0" max="1000" value="0" aria-label="Seek">
+        </div>
         <span id="pl-dur">0:00</span>
       </div>
     </div>
     <div class="pl-side">
+      <button type="button" data-pl="lyrics" class="pl-lyrics" aria-label="Lyrics" title="Lyrics" aria-pressed="false"><i data-lucide="mic"></i></button>
       <i data-lucide="volume-2" class="pl-vol-icon"></i>
-      <input type="range" id="pl-vol" min="0" max="1" step="0.01" aria-label="Volume">
+      <div class="slider volume" id="vol-slider">
+        <div class="slider-track"><div class="slider-fill" id="vol-fill"></div></div>
+        <div class="slider-thumb" id="vol-thumb"></div>
+        <input type="range" id="pl-vol" min="0" max="1" step="0.01" aria-label="Volume">
+      </div>
       <button type="button" data-pl="collapse" class="pl-collapse" aria-label="Shrink player" title="Shrink"><i data-lucide="minimize-2"></i></button>
     </div>
     <button type="button" data-pl="expand" class="pl-expand" aria-label="Expand player" title="Expand"><i data-lucide="maximize-2"></i></button>
