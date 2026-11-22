@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>playing · algebra</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap">
@@ -11,13 +12,13 @@
 </head>
 <body class="play-page">
   <header class="play-bar">
-    <a href="/#games" aria-label="Back to games" title="Back to games"><i data-lucide="arrow-left"></i></a>
+    <a href="/app#games" aria-label="Back to games" title="Back to games"><i data-lucide="arrow-left"></i></a>
     <h1 id="title">game</h1>
     <button type="button" id="full" aria-label="Fullscreen" title="Fullscreen"><i data-lucide="maximize"></i></button>
     <a id="newtab" target="_blank" rel="noopener" aria-label="Open game in a new tab" title="Open in new tab"><i data-lucide="external-link"></i></a>
   </header>
   <iframe id="game" title="Game" allow="autoplay; fullscreen; gamepad; clipboard-write; encrypted-media" allowfullscreen></iframe>
-  <p class="play-bad" id="bad" hidden>That isn't a game this site can open. <a href="/#games">Back to games</a></p>
+  <p class="play-bad" id="bad" hidden>That isn't a game this site can open. <a href="/app#games">Back to games</a></p>
 
   <script src="/lucide/lucide.min.js"></script>
   <script>
