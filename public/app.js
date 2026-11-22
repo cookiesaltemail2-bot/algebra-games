@@ -184,7 +184,21 @@ const connection = new BareMux.BareMuxConnection('/baremux/worker.js');
 const browser = document.getElementById('browser');
 const frameWrap = document.getElementById('frame-wrap');
 const barUrl = document.getElementById('bar-url');
+const dockBrowserTab = document.getElementById('dock-browser');
 let sjFrame, transportKey;
+
+const ENGINE_HOME = {
+  duckduckgo: 'https://duckduckgo.com/',
+  google: 'https://www.google.com/',
+  bing: 'https://www.bing.com/',
+  brave: 'https://search.brave.com/',
+};
+const engineHome = () => ENGINE_HOME[settings.engine] || ENGINE_HOME.duckduckgo;
+const setBrowserTab = on => {
+  if (!dockBrowserTab) return;
+  dockBrowserTab.classList.toggle('active', on);
+  dockBrowserTab.setAttribute('aria-pressed', String(on));
+};
 
 // Built-in relay: one WebSocket per connection (wsproxy), which dodges Cloudflare's
 // 50-connections-per-invocation cap. A custom server is assumed to speak Wisp.
@@ -211,6 +225,7 @@ function go(url) {
 async function browse(url) {
   browser.hidden = false;
   document.body.classList.add('browsing');
+  setBrowserTab(true);
   barUrl.value = url;
   setLoading(true);
   try {
@@ -242,6 +257,7 @@ function closeBrowser() {
   if (browser.hidden) return;
   browser.hidden = true;
   document.body.classList.remove('browsing');
+  setBrowserTab(false);
   setLoading(false);
   if (document.fullscreenElement) document.exitFullscreen();
   if (sjFrame) sjFrame.frame.src = 'about:blank'; // stops audio/video from the closed page
@@ -262,6 +278,15 @@ document.getElementById('bar').addEventListener('submit', e => {
   if (q) browse(toUrl(q, settings.engine));
 });
 document.querySelectorAll('.bar [data-act]').forEach(b => b.addEventListener('click', () => barActions[b.dataset.act]()));
+
+dockBrowserTab?.addEventListener('click', () => {
+  if (browser.hidden) {
+    setLyricsOpen(false);
+    browse(engineHome());
+  } else {
+    closeBrowser();
+  }
+});
 
 // ---------- bookmarks ----------
 const brand = (name, color) => ({ name, color, url: `https://${name}.com`, brand: name });
@@ -1184,8 +1209,10 @@ function setLyricsOpen(on) {
   if (on && !queue[qi]) { toast('Play a song first.'); return; }
   lyricsOpen = on;
   lyricsPanel.hidden = !on;
-  document.querySelectorAll('#lyrics-btn, .pl-lyrics').forEach(b => b.setAttribute('aria-pressed', String(on)));
+  document.querySelectorAll('#lyrics-btn, .pl-lyrics, #dock-lyrics').forEach(b => b.setAttribute('aria-pressed', String(on)));
+  document.getElementById('dock-lyrics').classList.toggle('active', on);
   if (on) {
+    closeBrowser();
     syncLyrics();
     startLyricsLoop();
   } else {
@@ -1480,6 +1507,7 @@ function startLyricsLoop() {
 }
 
 document.getElementById('lyrics-btn').addEventListener('click', () => setLyricsOpen(!lyricsOpen));
+document.getElementById('dock-lyrics').addEventListener('click', () => setLyricsOpen(!lyricsOpen));
 document.getElementById('lyrics-close').addEventListener('click', () => setLyricsOpen(false));
 lyricsCover.addEventListener('error', () => { lyricsCover.hidden = true; });
 addEventListener('keydown', event => {
@@ -1509,7 +1537,9 @@ function route() {
   placePlayer(savedPlayer.x, savedPlayer.y);
 }
 addEventListener('hashchange', route);
-document.querySelector('.dock').addEventListener('click', closeBrowser);
+document.querySelector('.dock').addEventListener('click', event => {
+  if (event.target.closest('a')) closeBrowser();
+});
 
 renderSettings();
 renderBookmarks();

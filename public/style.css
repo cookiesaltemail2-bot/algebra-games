@@ -1298,3 +1298,33 @@ body[data-view="ai"] main { padding-top: 48px; }
   .lyric-line { padding: 7px 10px; }
   .lyric-line.plain { padding: 5px 10px; }
 }
+
+/* dock tabs: lyrics and the proxy browser */
+.dock .dock-tab {
+  display: flex; align-items: center; justify-content: center;
+  width: 46px; height: 46px; flex: none;
+  padding: 0; border: 0; border-radius: 999px;
+  background: none; color: var(--muted);
+  cursor: pointer;
+  transition: background .2s, color .2s, box-shadow .2s, transform .1s;
+}
+.dock .dock-tab:hover { color: var(--text); background: rgba(255, 255, 255, .06); }
+.dock .dock-tab.active {
+  color: #171009;
+  background: var(--accent);
+  box-shadow: 0 0 24px -4px color-mix(in srgb, var(--accent) 80%, transparent);
+}
+.dock .dock-tab:active { transform: scale(.94); }
+.dock .dock-tab svg { width: 19px; height: 19px; }
+
+/* overlays cover the whole viewport; the fixed dock stays above them */
+.lyrics-view { inset: 0; }
+.browser { inset: 0; }
+.lyrics-head { padding-left: 122px; }
+.lyrics-scroll { padding-left: max(106px, 8vw); }
+
+@media (max-width: 640px) {
+  .dock .dock-tab { width: 40px; height: 40px; }
+  .lyrics-head { padding: 14px 16px 6px; }
+  .lyrics-scroll { padding: 18px 12px 230px; }
+}
